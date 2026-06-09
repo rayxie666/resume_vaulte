@@ -1,5 +1,8 @@
 import Database from "@tauri-apps/plugin-sql";
+import { base64ToBytes, bytesToBase64 } from "./latexCompile";
 import type {
+  Asset,
+  AssetUsage,
   JobCategory,
   ResumeCheckpoint,
   ResumeKind,
@@ -181,4 +184,144 @@ export async function createCheckpoint(
 export async function deleteCheckpoint(id: number): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM resume_checkpoints WHERE id = $1", [id]);
+}
+
+// ───── assets (global) + resume_version_assets (junction) ─────
+
+interface AssetBytesRow {
+  bytes_b64: string | null;
+  bytes: number[] | Uint8Array | null;
+}
+
+export async function listAllAssets(): Promise<AssetUsage[]> {
+  const db = await getDb();
+  return db.select<AssetUsage[]>(
+    "SELECT a.id, a.name, a.size, a.mime, a.created_at, a.updated_at, \
+            COALESCE((SELECT COUNT(*) FROM resume_version_assets v WHERE v.asset_id = a.id), 0) AS usage_count \
+     FROM assets a ORDER BY a.name ASC",
+  );
+}
+
+export async function listAssetsForVersion(
+  versionId: number,
+): Promise<Asset[]> {
+  const db = await getDb();
+  return db.select<Asset[]>(
+    "SELECT a.id, a.name, a.size, a.mime, a.created_at, a.updated_at \
+     FROM assets a JOIN resume_version_assets v ON v.asset_id = a.id \
+     WHERE v.version_id = $1 ORDER BY a.name ASC",
+    [versionId],
+  );
+}
+
+export async function getAssetByName(name: string): Promise<Asset | null> {
+  const db = await getDb();
+  const rows = await db.select<Asset[]>(
+    "SELECT id, name, size, mime, created_at, updated_at FROM assets WHERE name = $1",
+    [name],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getAssetBytes(id: number): Promise<Uint8Array | null> {
+  const db = await getDb();
+  const rows = await db.select<AssetBytesRow[]>(
+    "SELECT bytes_b64, bytes FROM assets WHERE id = $1",
+    [id],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  if (row.bytes_b64) return base64ToBytes(row.bytes_b64);
+  // Legacy fallback: pre-v8 rows have raw BLOB. tauri-plugin-sql cannot
+  // round-trip true binary, so these are likely corrupt and the user must
+  // re-upload. Returning the bytes verbatim lets the UI show "size" but
+  // compile will fail with a clear "PNG header" error.
+  if (!row.bytes) return null;
+  if (row.bytes instanceof Uint8Array) return row.bytes;
+  return new Uint8Array(row.bytes);
+}
+
+function inferMime(name: string): string | null {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  switch (ext) {
+    case "png": return "image/png";
+    case "jpg":
+    case "jpeg": return "image/jpeg";
+    case "svg": return "image/svg+xml";
+    case "pdf": return "application/pdf";
+    case "eps": return "application/postscript";
+    default: return null;
+  }
+}
+
+/// Upsert a global asset by name (replaces bytes if name already exists).
+///
+/// Stores bytes as base64 in `bytes_b64` to avoid tauri-plugin-sql's broken
+/// BLOB binding for `number[]` payloads. The legacy `bytes` BLOB column is
+/// kept non-NULL (empty blob) only because pre-v8 schema declared NOT NULL.
+export async function upsertAsset(
+  name: string,
+  bytes: Uint8Array,
+): Promise<number> {
+  const db = await getDb();
+  const b64 = bytesToBase64(bytes);
+  await db.execute(
+    "INSERT INTO assets (name, bytes, bytes_b64, size, mime) \
+     VALUES ($1, x'', $2, $3, $4) \
+     ON CONFLICT(name) DO UPDATE SET \
+       bytes_b64 = excluded.bytes_b64, \
+       size = excluded.size, \
+       mime = excluded.mime, \
+       updated_at = datetime('now')",
+    [name, b64, bytes.length, inferMime(name)],
+  );
+  const r = await db.select<{ id: number }[]>(
+    "SELECT id FROM assets WHERE name = $1",
+    [name],
+  );
+  return r[0]?.id ?? 0;
+}
+
+export async function renameAsset(id: number, newName: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE assets SET name = $1, mime = $2, updated_at = datetime('now') WHERE id = $3",
+    [newName, inferMime(newName), id],
+  );
+}
+
+export async function deleteAsset(id: number): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM assets WHERE id = $1", [id]);
+}
+
+export async function linkAssetToVersion(
+  versionId: number,
+  assetId: number,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "INSERT OR IGNORE INTO resume_version_assets (version_id, asset_id) VALUES ($1, $2)",
+    [versionId, assetId],
+  );
+}
+
+export async function unlinkAssetFromVersion(
+  versionId: number,
+  assetId: number,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "DELETE FROM resume_version_assets WHERE version_id = $1 AND asset_id = $2",
+    [versionId, assetId],
+  );
+}
+
+export async function assetUsageCount(assetId: number): Promise<number> {
+  const db = await getDb();
+  const rows = await db.select<{ n: number }[]>(
+    "SELECT COUNT(*) AS n FROM resume_version_assets WHERE asset_id = $1",
+    [assetId],
+  );
+  return rows[0]?.n ?? 0;
 }

@@ -22,13 +22,11 @@ export interface FileWrite {
 const K_URL = "rv.git.url";
 const K_PAT = "rv.git.pat";
 const K_BRANCH = "rv.git.branch";
-const K_AUTO = "rv.git.autosync";
 
 export interface GitConfig {
   url: string;
   pat: string;
   branch: string;
-  autoSync: boolean;
 }
 
 export function loadGitConfig(): GitConfig {
@@ -36,7 +34,6 @@ export function loadGitConfig(): GitConfig {
     url: localStorage.getItem(K_URL) ?? "",
     pat: localStorage.getItem(K_PAT) ?? "",
     branch: localStorage.getItem(K_BRANCH) ?? "main",
-    autoSync: localStorage.getItem(K_AUTO) === "1",
   };
 }
 
@@ -44,14 +41,14 @@ export function saveGitConfig(cfg: GitConfig): void {
   localStorage.setItem(K_URL, cfg.url);
   localStorage.setItem(K_PAT, cfg.pat);
   localStorage.setItem(K_BRANCH, cfg.branch || "main");
-  localStorage.setItem(K_AUTO, cfg.autoSync ? "1" : "0");
 }
 
 export function clearGitConfig(): void {
   localStorage.removeItem(K_URL);
   localStorage.removeItem(K_PAT);
   localStorage.removeItem(K_BRANCH);
-  localStorage.removeItem(K_AUTO);
+  // legacy key, ignore failure
+  localStorage.removeItem("rv.git.autosync");
 }
 
 export function isGitConnected(): boolean {
@@ -238,5 +235,15 @@ export async function pushCheckpoint(
   files.push({ path: categoryMetaPath(category), text: categoryMeta(category) });
   const cleanNote = (note || "").trim() || "(no note)";
   const msg = `v${seq} ${version.name} (${category.name}): ${cleanNote}`;
+  return gitApply(files, [], msg, true);
+}
+
+export async function pushNewVersion(
+  category: JobCategory,
+  version: ResumeVersion,
+): Promise<GitResult> {
+  const files = await versionToFiles(category, version);
+  files.push({ path: categoryMetaPath(category), text: categoryMeta(category) });
+  const msg = `Add ${version.kind} version "${version.name}" (${category.name})`;
   return gitApply(files, [], msg, true);
 }

@@ -18,27 +18,42 @@ import {
   readVaultPdf,
   removeVaultFile,
 } from "./vault";
-import { compileLatex, pdfBytesFromResult } from "./latexCompile";
+import {
+  bytesToBase64,
+  compileLatex,
+  pdfBytesFromResult,
+  type CompileAsset,
+} from "./latexCompile";
 import {
   createCheckpoint,
+  getAssetBytes,
+  getAssetByName,
   getCategory,
   getVersion,
+  linkAssetToVersion,
+  listAssetsForVersion,
   listCheckpoints,
 } from "./db";
 import HistoryPanel from "./HistoryPanel";
+import AttachmentsModal from "./AttachmentsModal";
+import AssetsPanel from "./AssetsPanel";
+import { findReferencedAssets } from "./assetScan";
 import { useThumbnail } from "./useThumbnail";
 import {
   gitConnect,
   gitDisconnect,
   gitStatus,
+  isGitConnected,
   loadGitConfig,
   saveGitConfig,
   clearGitConfig,
   pushCheckpoint,
+  pushNewVersion,
   syncVaultManual,
   type GitConfig,
   type GitStatus,
 } from "./github";
+import { useSync } from "./SyncStatus";
 import { EMOJI_PICKS, GRADIENTS, gradientFor, initials } from "./iconUtils";
 import { useDialogs } from "./Dialogs";
 import { useLocale, useT, type LangPref } from "./i18n";
@@ -95,7 +110,8 @@ const LATEX_TEMPLATE = String.raw`%---------------------------------------------
 type View =
   | { kind: "home" }
   | { kind: "category"; categoryId: number }
-  | { kind: "version"; categoryId: number; versionId: number };
+  | { kind: "version"; categoryId: number; versionId: number }
+  | { kind: "assets" };
 
 type SelectMode = null | "categories" | "versions";
 
@@ -111,6 +127,7 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const dlg = useDialogs();
   const t = useT();
+  const sync = useSync();
 
   const exitSelect = useCallback(() => {
     setSelectMode(null);
@@ -150,10 +167,11 @@ export default function App() {
   // Exit select mode when changing views — selection doesn't carry across scopes.
   useEffect(() => {
     exitSelect();
-  }, [view.kind, view.kind === "category" ? view.categoryId : null, exitSelect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.kind, view.kind === "category" ? view.categoryId : null]);
 
   const activeCategory = useMemo(() => {
-    if (view.kind === "home") return null;
+    if (view.kind !== "category" && view.kind !== "version") return null;
     return categories.find((c) => c.id === view.categoryId) ?? null;
   }, [view, categories]);
 
@@ -189,12 +207,18 @@ export default function App() {
     for (const v of vs) if (v.file_path) await removeVaultFile(v.file_path);
     await deleteCategory(c.id);
     await refreshHome();
-    if (view.kind !== "home" && view.categoryId === c.id) setView({ kind: "home" });
+    if (
+      (view.kind === "category" || view.kind === "version") &&
+      view.categoryId === c.id
+    ) {
+      setView({ kind: "home" });
+    }
   }
 
   async function handleAddVersion(kind: ResumeKind) {
-    if (view.kind === "home") return;
+    if (view.kind !== "category" && view.kind !== "version") return;
     const catId = view.categoryId;
+    let createdId: number | null = null;
     if (kind === "latex") {
       const name = await dlg.prompt({
         title: t("new_latex_title"),
@@ -204,15 +228,12 @@ export default function App() {
         cancelText: t("cancel"),
       });
       if (!name) return;
-      const id = await createVersion({
+      createdId = await createVersion({
         category_id: catId,
         name,
         kind: "latex",
         content: LATEX_TEMPLATE,
       });
-      await refreshVersions(catId);
-      await refreshHome();
-      setView({ kind: "version", categoryId: catId, versionId: id });
     } else {
       const picked = await importPdfFromDialog();
       if (!picked) return;
@@ -227,15 +248,29 @@ export default function App() {
         await removeVaultFile(picked.storedPath);
         return;
       }
-      const id = await createVersion({
+      createdId = await createVersion({
         category_id: catId,
         name,
         kind: "pdf",
         file_path: picked.storedPath,
       });
-      await refreshVersions(catId);
-      await refreshHome();
-      setView({ kind: "version", categoryId: catId, versionId: id });
+    }
+    await refreshVersions(catId);
+    await refreshHome();
+    setView({ kind: "version", categoryId: catId, versionId: createdId });
+
+    // Auto-sync new version to GitHub if connected.
+    if (isGitConnected() && createdId != null) {
+      const [cat, ver] = await Promise.all([
+        getCategory(catId),
+        getVersion(createdId),
+      ]);
+      if (cat && ver) {
+        void sync.run(`${ver.name}`, async () => {
+          const r = await pushNewVersion(cat, ver);
+          if (!r.success) throw new Error(r.log.slice(-400));
+        });
+      }
     }
   }
 
@@ -258,7 +293,10 @@ export default function App() {
       }
       exitSelect();
       await refreshHome();
-      if (view.kind !== "home" && selectedIds.has(view.categoryId)) {
+      if (
+        (view.kind === "category" || view.kind === "version") &&
+        selectedIds.has(view.categoryId)
+      ) {
         setView({ kind: "home" });
       }
     } else {
@@ -309,13 +347,14 @@ export default function App() {
         onBack={() => {
           if (view.kind === "version") {
             setView({ kind: "category", categoryId: view.categoryId });
-          } else if (view.kind === "category") {
+          } else if (view.kind === "category" || view.kind === "assets") {
             setView({ kind: "home" });
           }
         }}
         onEditCategory={() => activeCategory && setEditingCategory(activeCategory)}
         onEditVersion={() => activeVersion && setEditingVersion(activeVersion)}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenAssets={() => setView({ kind: "assets" })}
         onEnterSelect={() => {
           if (view.kind === "home") setSelectMode("categories");
           else if (view.kind === "category") setSelectMode("versions");
@@ -358,6 +397,7 @@ export default function App() {
             onSaved={() => view.kind === "version" && refreshVersions(view.categoryId)}
           />
         )}
+        {view.kind === "assets" && <AssetsPanel />}
       </main>
 
       {editingCategory && (
@@ -376,7 +416,9 @@ export default function App() {
           version={editingVersion}
           onClose={() => setEditingVersion(null)}
           onSaved={async () => {
-            if (view.kind !== "home") await refreshVersions(view.categoryId);
+            if (view.kind === "category" || view.kind === "version") {
+              await refreshVersions(view.categoryId);
+            }
             await refreshHome();
             setEditingVersion(null);
           }}
@@ -452,6 +494,7 @@ function NavBar({
   onEditCategory,
   onEditVersion,
   onOpenSettings,
+  onOpenAssets,
   onEnterSelect,
   onExitSelect,
 }: {
@@ -463,6 +506,7 @@ function NavBar({
   onEditCategory: () => void;
   onEditVersion: () => void;
   onOpenSettings: () => void;
+  onOpenAssets: () => void;
   onEnterSelect: () => void;
   onExitSelect: () => void;
 }) {
@@ -475,6 +519,8 @@ function NavBar({
   } else if (view.kind === "version" && version && category) {
     title = version.name;
     subtitle = category.name;
+  } else if (view.kind === "assets") {
+    title = t("assets_library");
   }
   const canSelect =
     !selectMode && (view.kind === "home" || view.kind === "category");
@@ -512,14 +558,19 @@ function NavBar({
           </button>
         )}
         {!selectMode && view.kind === "home" && (
-          <button
-            className="nav-btn icon-btn"
-            onClick={onOpenSettings}
-            title={t("settings")}
-            aria-label={t("settings")}
-          >
-            <GearIcon />
-          </button>
+          <>
+            <button className="nav-btn" onClick={onOpenAssets}>
+              {t("assets_library")}
+            </button>
+            <button
+              className="nav-btn icon-btn"
+              onClick={onOpenSettings}
+              title={t("settings")}
+              aria-label={t("settings")}
+            >
+              <GearIcon />
+            </button>
+          </>
         )}
       </div>
     </header>
@@ -1049,6 +1100,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
 
 function GitHubSection() {
   const t = useT();
+  const sync = useSync();
   const [cfg, setCfg] = useState<GitConfig>(() => loadGitConfig());
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [busy, setBusy] = useState<null | "connect" | "sync">(null);
@@ -1098,7 +1150,7 @@ function GitHubSection() {
     try {
       await gitDisconnect();
       clearGitConfig();
-      setCfg({ url: "", pat: "", branch: "main", autoSync: false });
+      setCfg({ url: "", pat: "", branch: "main" });
       await refresh();
     } finally {
       setBusy(null);
@@ -1109,20 +1161,15 @@ function GitHubSection() {
     setBusy("sync");
     setErr(null);
     setMsg(null);
-    try {
-      saveGitConfig(cfg);
-      const r = await syncVaultManual();
-      if (r.success) {
-        setMsg(t("github_sync_done"));
-      } else {
-        setErr(r.log.slice(-1500));
-      }
-      await refresh();
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setBusy(null);
-    }
+    saveGitConfig(cfg);
+    const r = await sync.run("manual", async () => {
+      const result = await syncVaultManual();
+      if (!result.success) throw new Error(result.log.slice(-400));
+      return result;
+    });
+    if (r) setMsg(t("github_sync_done"));
+    await refresh();
+    setBusy(null);
   }
 
   const connected = status?.connected ?? false;
@@ -1154,18 +1201,6 @@ function GitHubSection() {
           value={cfg.branch}
           placeholder="main"
           onChange={(e) => update("branch", e.target.value.trim() || "main")}
-        />
-      </label>
-      <label className="field gh-toggle">
-        <span>{t("github_auto_sync")}</span>
-        <input
-          type="checkbox"
-          checked={cfg.autoSync}
-          onChange={(e) => {
-            const v = e.target.checked;
-            update("autoSync", v);
-            saveGitConfig({ ...cfg, autoSync: v });
-          }}
         />
       </label>
 
@@ -1213,7 +1248,9 @@ function GitHubSection() {
         )}
       </div>
 
-      <p className="gh-help">{t("github_help")}</p>
+      <p className="gh-help">
+        {t("github_help")} {connected && t("github_auto_hint")}
+      </p>
       {msg && <div className="gh-msg ok">{msg}</div>}
       {err && (
         <details className="gh-msg err">
@@ -1234,21 +1271,78 @@ function LatexEditor({
 }) {
   const t = useT();
   const dlg = useDialogs();
+  const sync = useSync();
   const [code, setCode] = useState(version.content ?? "");
   const [dirty, setDirty] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
   const [checkpointCount, setCheckpointCount] = useState(0);
+  const [assetCount, setAssetCount] = useState(0);
+  const [compileAssets, setCompileAssets] = useState<CompileAsset[]>([]);
+  const [missingAssets, setMissingAssets] = useState<string[]>([]);
 
   const refreshCheckpointCount = useCallback(async () => {
     const list = await listCheckpoints(version.id);
     setCheckpointCount(list.length);
   }, [version.id]);
 
+  // Build the asset bundle to ship to the compiler:
+  //   linked-to-this-version  ∪  source-referenced-and-available-globally
+  // Anything still missing after that is reported in `missingAssets`.
+  const refreshAssets = useCallback(
+    async (sourceText: string) => {
+      const linked = await listAssetsForVersion(version.id);
+      const linkedById = new Map(linked.map((a) => [a.id, a]));
+      const haveByName = new Map(linked.map((a) => [a.name, a]));
+
+      const referenced = findReferencedAssets(sourceText);
+      const missing: string[] = [];
+
+      for (const name of referenced) {
+        if (haveByName.has(name)) continue;
+        const found =
+          (await getAssetByName(name)) ??
+          (await getAssetByName(`${name}.png`)) ??
+          (await getAssetByName(`${name}.jpg`)) ??
+          (await getAssetByName(`${name}.pdf`));
+        if (found) {
+          await linkAssetToVersion(version.id, found.id);
+          linkedById.set(found.id, found);
+          haveByName.set(found.name, found);
+        } else {
+          missing.push(name);
+        }
+      }
+
+      const all = Array.from(linkedById.values());
+      setAssetCount(all.length);
+      const loaded: CompileAsset[] = [];
+      for (const a of all) {
+        const bytes = await getAssetBytes(a.id);
+        if (bytes)
+          loaded.push({ name: a.name, bytesBase64: bytesToBase64(bytes) });
+      }
+      setCompileAssets(loaded);
+      setMissingAssets(missing);
+    },
+    [version.id],
+  );
+
   useEffect(() => {
     setCode(version.content ?? "");
     setDirty(false);
     refreshCheckpointCount().catch(console.error);
-  }, [version.id, version.content, refreshCheckpointCount]);
+    refreshAssets(version.content ?? "").catch(console.error);
+  }, [version.id, version.content, refreshCheckpointCount, refreshAssets]);
+
+  // Re-scan live source when typing (debounced; DB is local so cheap).
+  useEffect(() => {
+    if (code === (version.content ?? "")) return;
+    const id = window.setTimeout(() => {
+      refreshAssets(code).catch(console.error);
+    }, 500);
+    return () => window.clearTimeout(id);
+  }, [code, version.content, refreshAssets]);
 
   async function handleSave() {
     await updateVersion(version.id, { content: code });
@@ -1262,7 +1356,7 @@ function LatexEditor({
   }
 
   async function handleExportPdf() {
-    const r = await compileLatex(code);
+    const r = await compileLatex(code, compileAssets);
     const bytes = pdfBytesFromResult(r);
     if (!bytes) {
       alert(`${t("compile_error")}\n\n${r.log.slice(-2000)}`);
@@ -1289,22 +1383,19 @@ function LatexEditor({
     const cpId = await createCheckpoint(version.id, code, note);
     await refreshCheckpointCount();
 
-    // Auto-push to GitHub if configured.
-    const cfg = loadGitConfig();
-    if (cfg.url && cfg.pat && cfg.autoSync) {
-      try {
-        const [cat, freshVersion, allCps] = await Promise.all([
-          getCategory(version.category_id),
-          getVersion(version.id),
-          listCheckpoints(version.id),
-        ]);
-        if (cat && freshVersion) {
-          const seq = allCps.find((c) => c.id === cpId)?.seq ?? allCps.length;
+    // Auto-push to GitHub if connected.
+    if (isGitConnected()) {
+      const [cat, freshVersion, allCps] = await Promise.all([
+        getCategory(version.category_id),
+        getVersion(version.id),
+        listCheckpoints(version.id),
+      ]);
+      if (cat && freshVersion) {
+        const seq = allCps.find((c) => c.id === cpId)?.seq ?? allCps.length;
+        void sync.run(`v${seq} ${freshVersion.name}`, async () => {
           const r = await pushCheckpoint(cat, freshVersion, note, seq);
-          if (!r.success) console.warn("[checkpoint push failed]", r.log);
-        }
-      } catch (e) {
-        console.warn("[checkpoint push errored]", e);
+          if (!r.success) throw new Error(r.log.slice(-400));
+        });
       }
     }
   }
@@ -1326,6 +1417,12 @@ function LatexEditor({
             <span className="count-badge">{checkpointCount}</span>
           )}
         </button>
+        <button onClick={() => setShowAttachments(true)}>
+          {t("attachments")}
+          {assetCount > 0 && (
+            <span className="count-badge">{assetCount}</span>
+          )}
+        </button>
         <span className="grow" />
         <button onClick={handleSave} disabled={!dirty}>
           {dirty ? t("save") : t("saved")}
@@ -1333,6 +1430,17 @@ function LatexEditor({
         <button onClick={handleExportTex}>{t("export_tex")}</button>
         <button onClick={handleExportPdf}>{t("export_compiled_pdf")}</button>
       </div>
+      {missingAssets.length > 0 && (
+        <div className="missing-banner">
+          <span>{t("missing_assets_banner")(missingAssets.join(", "))}</span>
+          <button
+            className="banner-btn"
+            onClick={() => setShowAttachments(true)}
+          >
+            {t("upload_missing")}
+          </button>
+        </div>
+      )}
       <div className="tsx-split">
         <textarea
           className="code"
@@ -1344,7 +1452,7 @@ function LatexEditor({
           }}
         />
         <div className="preview-divider" />
-        <LatexPreview source={code} />
+        <LatexPreview source={code} assets={compileAssets} />
       </div>
       {showHistory && (
         <HistoryPanel
@@ -1354,22 +1462,40 @@ function LatexEditor({
           onRestore={handleRestore}
         />
       )}
+      {showAttachments && (
+        <AttachmentsModal
+          versionId={version.id}
+          onClose={() => setShowAttachments(false)}
+          onChanged={() => {
+            refreshAssets(code).catch(console.error);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function LatexPreview({ source }: { source: string }) {
+function LatexPreview({
+  source,
+  assets,
+}: {
+  source: string;
+  assets: CompileAsset[];
+}) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Stable signature so the effect re-fires when the asset set actually changes.
+  const assetsSig = assets.map((a) => `${a.name}:${a.bytesBase64.length}`).join("|");
 
   useEffect(() => {
     let cancelled = false;
     setBusy(true);
     const timer = window.setTimeout(async () => {
       try {
-        const r = await compileLatex(source);
+        const r = await compileLatex(source, assets);
         if (cancelled) return;
         if (r.success && r.pdf) {
           const blob = new Blob([new Uint8Array(r.pdf) as BlobPart], {
@@ -1396,7 +1522,7 @@ function LatexPreview({ source }: { source: string }) {
       window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source]);
+  }, [source, assetsSig]);
 
   return (
     <div className="preview">

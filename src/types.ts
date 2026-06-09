@@ -31,3 +31,16 @@ export interface ResumeCheckpoint {
   note: string | null;
   created_at: string;
 }
+
+export interface Asset {
+  id: number;
+  name: string;
+  size: number;
+  mime: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetUsage extends Asset {
+  usage_count: number;
+}

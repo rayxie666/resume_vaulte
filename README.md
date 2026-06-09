@@ -76,6 +76,27 @@ follow [Tauri's macOS signing guide](https://tauri.app/v2/distribute/sign/macos/
 
 Prebuilt artifacts: see [Releases](https://github.com/rayxie666/resume_vaulte/releases).
 
+## Attachments (LaTeX images / extra files)
+
+LaTeX templates that use `\includegraphics{logo.png}` or other external assets
+won't compile out of the box — Tectonic runs in a fresh temp directory and
+needs the files alongside `main.tex`. The app handles this via a per-version
+**Attachments** panel:
+
+1. Open a LaTeX version → click **Attachments** in the editor toolbar.
+2. Add PNG/JPG/PDF/EPS files (max 5 MB each, 30 MB total per compile).
+3. The file's base name is what `\includegraphics{...}` references, e.g. an
+   uploaded `bytedance.png` is reachable as `\includegraphics{bytedance.png}`.
+4. Preview recompiles automatically; assets are written to the temp dir each
+   time and removed after.
+
+Attachments live in the SQLite vault (`resume_assets` table, `BLOB` column) and
+are level-deleted with the version. They are not currently synced to GitHub —
+only the `.tex` source is pushed.
+
+The Rust side rejects illegal names (`..`, slashes, dotfiles) and oversized
+files with a clear hint in the compile log.
+
 ## Where data lives
 
 ```
@@ -177,6 +198,17 @@ resume-vault/
 - [PDF.js](https://mozilla.github.io/pdf.js/) — first-page thumbnails
 - [jsdiff](https://github.com/kpdecker/jsdiff) — checkpoint diff rendering
 
+## Bundled fonts
+
+The macOS app bundle ships three FontAwesome 5 Free OTFs
+(`src-tauri/resources/fonts/`) and copies them into Tectonic's working
+directory at compile time via the `OSFONTDIR` env var. This lets
+`\usepackage{fontawesome5}` work out of the box on machines that don't have the
+fonts installed system-wide. The fonts are licensed under
+[SIL OFL 1.1](https://scripts.sil.org/OFL); see `LICENSE.txt` in the fonts
+folder.
+
 ## License
 
-MIT.
+MIT (app code).
+FontAwesome 5 Free fonts under SIL OFL 1.1 (see `src-tauri/resources/fonts/LICENSE.txt`).

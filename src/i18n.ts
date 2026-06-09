@@ -84,7 +84,28 @@ type DictShape = {
   github_repo_url: string;
   github_pat: string;
   github_branch: string;
-  github_auto_sync: string;
+  attachments: string;
+  add_attachment: string;
+  no_attachments: string;
+  attachment_name: string;
+  attachment_size: string;
+  attachment_too_large: (limit_mb: number) => string;
+  rename_attachment: string;
+  assets_library: string;
+  no_assets: string;
+  no_assets_filtered: string;
+  search_assets: string;
+  asset_usage_count: (n: number) => string;
+  asset_delete_with_usage: (name: string, n: number) => string;
+  copy_reference_name: string;
+  link_from_library: string;
+  missing_assets_banner: (names: string) => string;
+  upload_missing: string;
+  insert_into_source: string;
+  github_status_syncing: string;
+  github_status_synced: string;
+  github_status_failed: string;
+  github_auto_hint: string;
   github_connect: string;
   github_connecting: string;
   github_disconnect: string;
@@ -190,7 +211,32 @@ const DICT: Record<Lang, DictShape> = {
     github_repo_url: "Repository URL",
     github_pat: "Personal Access Token",
     github_branch: "Branch",
-    github_auto_sync: "Auto-push on checkpoint",
+    attachments: "Attachments",
+    add_attachment: "Add file",
+    no_attachments: "No attachments yet. Add PNG/JPG/PDF to use with \\includegraphics{...}.",
+    attachment_name: "Name",
+    attachment_size: "Size",
+    attachment_too_large: (m: number) => `File exceeds the ${m} MB limit.`,
+    rename_attachment: "Rename",
+    assets_library: "Assets",
+    no_assets: "No assets yet. Upload PNG/JPG/PDF — they'll be reachable from any LaTeX resume via \\includegraphics{filename}.",
+    no_assets_filtered: "No assets match your search.",
+    search_assets: "Search assets…",
+    asset_usage_count: (n: number) =>
+      `used by ${n} resume${n === 1 ? "" : "s"}`,
+    asset_delete_with_usage: (name: string, n: number) =>
+      `"${name}" is referenced by ${n} resume${n === 1 ? "" : "s"}. Delete anyway?`,
+    copy_reference_name: "Copy filename",
+    link_from_library: "Pick from library",
+    missing_assets_banner: (names: string) =>
+      `Source references missing assets: ${names}. Upload them to compile.`,
+    upload_missing: "Upload",
+    insert_into_source: "Insert \\includegraphics",
+    github_status_syncing: "Syncing to GitHub",
+    github_status_synced: "Synced",
+    github_status_failed: "Sync failed",
+    github_auto_hint:
+      "Once connected, new versions and checkpoints push automatically.",
     github_connect: "Connect",
     github_connecting: "Connecting…",
     github_disconnect: "Disconnect",
@@ -288,7 +334,30 @@ const DICT: Record<Lang, DictShape> = {
     github_repo_url: "仓库地址",
     github_pat: "个人访问令牌（PAT）",
     github_branch: "分支",
-    github_auto_sync: "保存 checkpoint 时自动推送",
+    attachments: "附件",
+    add_attachment: "添加文件",
+    no_attachments: "暂无附件。添加 PNG/JPG/PDF，可在源码里用 \\includegraphics{...} 引用。",
+    attachment_name: "文件名",
+    attachment_size: "大小",
+    attachment_too_large: (m: number) => `文件超过 ${m} MB 限制。`,
+    rename_attachment: "重命名",
+    assets_library: "素材库",
+    no_assets: "暂无素材。上传 PNG/JPG/PDF，任一份 LaTeX 简历都能通过 \\includegraphics{文件名} 引用。",
+    no_assets_filtered: "没有匹配搜索的素材。",
+    search_assets: "搜索素材…",
+    asset_usage_count: (n: number) => `被 ${n} 份简历引用`,
+    asset_delete_with_usage: (name: string, n: number) =>
+      `"${name}" 当前被 ${n} 份简历引用，确认删除？`,
+    copy_reference_name: "复制文件名",
+    link_from_library: "从素材库选择",
+    missing_assets_banner: (names: string) =>
+      `源码引用了未上传的素材：${names}。上传后即可编译。`,
+    upload_missing: "上传",
+    insert_into_source: "插入 \\includegraphics",
+    github_status_syncing: "正在同步到 GitHub",
+    github_status_synced: "同步完成",
+    github_status_failed: "同步失败",
+    github_auto_hint: "连接后，新建版本和保存 checkpoint 都会自动推送。",
     github_connect: "连接",
     github_connecting: "连接中…",
     github_disconnect: "断开",
