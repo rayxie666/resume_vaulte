@@ -247,3 +247,27 @@ export async function pushNewVersion(
   const msg = `Add ${version.kind} version "${version.name}" (${category.name})`;
   return gitApply(files, [], msg, true);
 }
+
+export async function pushDeleteVersion(
+  category: JobCategory,
+  version: ResumeVersion,
+): Promise<GitResult> {
+  const paths = [versionFilePath(category, version), versionMetaPath(category, version)];
+  const msg = `Delete ${version.kind} version "${version.name}" (${category.name})`;
+  return gitApply([], paths, msg, true);
+}
+
+export async function pushDeleteCategory(
+  category: JobCategory,
+): Promise<GitResult> {
+  const paths = [`categories/${categorySlug(category)}`];
+  const msg = `Delete category "${category.name}"`;
+  return gitApply([], paths, msg, true);
+}
+
+export async function pushDeleteBulk(
+  paths: string[],
+  summary: string,
+): Promise<GitResult> {
+  return gitApply([], paths, summary, true);
+}

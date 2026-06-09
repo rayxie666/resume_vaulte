@@ -49,7 +49,13 @@ import {
   clearGitConfig,
   pushCheckpoint,
   pushNewVersion,
+  pushDeleteVersion,
+  pushDeleteCategory,
+  pushDeleteBulk,
   syncVaultManual,
+  categorySlug,
+  versionFilePath,
+  versionMetaPath,
   type GitConfig,
   type GitStatus,
 } from "./github";
@@ -213,6 +219,12 @@ export default function App() {
     ) {
       setView({ kind: "home" });
     }
+    if (isGitConnected()) {
+      void sync.run(`Delete ${c.name}`, async () => {
+        const r = await pushDeleteCategory(c);
+        if (!r.success) throw new Error(r.log.slice(-400));
+      });
+    }
   }
 
   async function handleAddVersion(kind: ResumeKind) {
@@ -286,10 +298,12 @@ export default function App() {
       });
       if (!ok) return;
       const toDelete = categories.filter((c) => selectedIds.has(c.id));
+      const paths: string[] = [];
       for (const c of toDelete) {
         const vs = await listVersions(c.id);
         for (const v of vs) if (v.file_path) await removeVaultFile(v.file_path);
         await deleteCategory(c.id);
+        paths.push(`categories/${categorySlug(c)}`);
       }
       exitSelect();
       await refreshHome();
@@ -298,6 +312,17 @@ export default function App() {
         selectedIds.has(view.categoryId)
       ) {
         setView({ kind: "home" });
+      }
+      if (isGitConnected() && paths.length) {
+        const names = toDelete.map((c) => `"${c.name}"`).join(", ");
+        const n = toDelete.length;
+        void sync.run(`Delete ${n} categor${n === 1 ? "y" : "ies"}`, async () => {
+          const r = await pushDeleteBulk(
+            paths,
+            `Delete ${n} categor${n === 1 ? "y" : "ies"}: ${names}`,
+          );
+          if (!r.success) throw new Error(r.log.slice(-400));
+        });
       }
     } else {
       const ok = await dlg.confirm({
@@ -309,13 +334,33 @@ export default function App() {
       });
       if (!ok) return;
       const toDelete = versions.filter((v) => selectedIds.has(v.id));
+      const cat =
+        isGitConnected() &&
+        (view.kind === "category" || view.kind === "version")
+          ? await getCategory(view.categoryId)
+          : null;
+      const paths: string[] = [];
       for (const v of toDelete) {
+        if (cat) {
+          paths.push(versionFilePath(cat, v), versionMetaPath(cat, v));
+        }
         if (v.file_path) await removeVaultFile(v.file_path);
         await deleteVersion(v.id);
       }
       exitSelect();
       if (view.kind === "category") await refreshVersions(view.categoryId);
       await refreshHome();
+      if (cat && paths.length) {
+        const names = toDelete.map((v) => `"${v.name}"`).join(", ");
+        const n = toDelete.length;
+        void sync.run(`Delete ${n} version${n === 1 ? "" : "s"}`, async () => {
+          const r = await pushDeleteBulk(
+            paths,
+            `Delete ${n} version${n === 1 ? "" : "s"} (${cat.name}): ${names}`,
+          );
+          if (!r.success) throw new Error(r.log.slice(-400));
+        });
+      }
     }
   }
 
@@ -328,6 +373,8 @@ export default function App() {
       danger: true,
     });
     if (!ok) return;
+    // Capture category before DB delete (need it for the git path).
+    const cat = isGitConnected() ? await getCategory(v.category_id) : null;
     if (v.file_path) await removeVaultFile(v.file_path);
     await deleteVersion(v.id);
     if (view.kind === "version" && view.versionId === v.id) {
@@ -335,6 +382,12 @@ export default function App() {
     }
     await refreshVersions(v.category_id);
     await refreshHome();
+    if (cat) {
+      void sync.run(`Delete ${v.name}`, async () => {
+        const r = await pushDeleteVersion(cat, v);
+        if (!r.success) throw new Error(r.log.slice(-400));
+      });
+    }
   }
 
   return (
