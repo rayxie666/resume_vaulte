@@ -38,6 +38,7 @@ import HistoryPanel from "./HistoryPanel";
 import AttachmentsModal from "./AttachmentsModal";
 import AssetsPanel from "./AssetsPanel";
 import CodeEditor from "./CodeEditor";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { findReferencedAssets } from "./assetScan";
 import { useThumbnail } from "./useThumbnail";
 import {
@@ -1249,6 +1250,28 @@ function GitHubSection() {
           onChange={(e) => update("pat", e.target.value.trim())}
         />
       </label>
+      <details className="gh-help-details">
+        <summary>{t("github_help_title")}</summary>
+        <ol className="gh-help-steps">
+          {t("github_help_steps")().map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+        <div className="gh-help-actions">
+          <button
+            type="button"
+            className="link"
+            onClick={() =>
+              openUrl(
+                "https://github.com/settings/personal-access-tokens/new",
+              ).catch(console.error)
+            }
+          >
+            {t("github_open_token_page")} ↗
+          </button>
+        </div>
+        <p className="gh-help-scope">{t("github_token_scope_hint")}</p>
+      </details>
       <label className="field">
         <span>{t("github_branch")}</span>
         <input

@@ -117,6 +117,10 @@ type DictShape = {
   github_sync_failed: string;
   github_sync_done: string;
   github_help: string;
+  github_help_title: string;
+  github_help_steps: () => string[];
+  github_open_token_page: string;
+  github_token_scope_hint: string;
   select: string;
   select_all: string;
   deselect_all: string;
@@ -249,6 +253,17 @@ const DICT: Record<Lang, DictShape> = {
     github_sync_done: "Sync complete",
     github_help:
       "Create a fine-grained PAT with read/write Contents access on the repo. Token is stored locally.",
+    github_help_title: "How do I get a token?",
+    github_help_steps: () => [
+      "Open GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
+      'Click "Generate new token". Give it a name (e.g. "Resume Vault") and an expiration.',
+      'Under Repository access, pick "Only select repositories" and choose the repo above.',
+      "Under Repository permissions, set Contents to Read and write. Leave the rest as is.",
+      "Generate the token, copy it (starts with `github_pat_...`), and paste it above.",
+    ],
+    github_open_token_page: "Open GitHub token page",
+    github_token_scope_hint:
+      "Required scope: Contents — Read and write. The token is saved only on this device.",
     select: "Select",
     select_all: "Select All",
     deselect_all: "Deselect All",
@@ -369,6 +384,17 @@ const DICT: Record<Lang, DictShape> = {
     github_sync_failed: "同步失败",
     github_sync_done: "同步完成",
     github_help: "创建 fine-grained PAT 并授予该仓库的 Contents 读写权限。Token 只保存在本地。",
+    github_help_title: "如何获取 Token？",
+    github_help_steps: () => [
+      "打开 GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens。",
+      '点击 "Generate new token"，填名字（如 "Resume Vault"）和到期时间。',
+      '在 Repository access 选 "Only select repositories"，勾选上面填的仓库。',
+      "在 Repository permissions 把 Contents 设为 Read and write，其它保持默认。",
+      "生成 Token 并复制（以 `github_pat_...` 开头），粘贴到上方的 PAT 输入框。",
+    ],
+    github_open_token_page: "打开 GitHub Token 设置页",
+    github_token_scope_hint:
+      "需要权限：Contents — Read and write。Token 仅保存在本机。",
     select: "选择",
     select_all: "全选",
     deselect_all: "全不选",

@@ -599,6 +599,62 @@ html, body, #root {
   color: #8e8e93;
   line-height: 1.45;
 }
+
+/* GitHub PAT onboarding (collapsed "How do I get a token?") */
+.gh-help-details {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #3a3a3c;
+}
+.gh-help-details summary {
+  list-style: none;
+  cursor: pointer;
+  color: #007aff;
+  font-weight: 500;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+.gh-help-details summary::-webkit-details-marker { display: none; }
+.gh-help-details summary::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.gh-help-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.gh-help-steps {
+  margin: 8px 0 6px;
+  padding-left: 22px;
+}
+.gh-help-steps li { margin: 4px 0; }
+.gh-help-steps li code,
+.gh-help-steps li {
+  font-size: 12px;
+}
+.gh-help-actions {
+  margin: 4px 0 2px;
+}
+.gh-help-actions .link {
+  background: transparent;
+  border: none;
+  color: #007aff;
+  font-size: 12px;
+  padding: 2px 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+.gh-help-actions .link:hover { text-decoration: underline; }
+.gh-help-scope {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #8e8e93;
+}
 .gh-msg {
   margin-top: 10px;
   padding: 8px 10px;
@@ -1542,6 +1598,10 @@ html, body, #root {
   .gh-actions button.primary { background: #0a84ff; border-color: #0a84ff; }
   .gh-actions button.primary:hover:not(:disabled) { background: #006edc; }
   .gh-help { color: #98989d; }
+  .gh-help-details { color: #d1d1d6; }
+  .gh-help-details summary { color: #0a84ff; }
+  .gh-help-actions .link { color: #0a84ff; }
+  .gh-help-scope { color: #98989d; }
   .gh-msg.ok { background: #0f2c1d; color: #4ade80; }
   .gh-msg.err { background: #2c1010; color: #ff6b5a; }
   .att-list { border-color: #38383a; }
