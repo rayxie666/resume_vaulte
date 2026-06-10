@@ -162,6 +162,17 @@ DELETE FROM assets WHERE bytes_b64 IS NULL OR bytes_b64 = '';
 "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "add_git_key_for_remote_identity",
+            // Stable identity between local rows and remote repo paths.
+            // Backfilled lazily on first push; never changes on rename.
+            sql: r#"
+ALTER TABLE job_categories  ADD COLUMN git_key TEXT;
+ALTER TABLE resume_versions ADD COLUMN git_key TEXT;
+"#,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -171,7 +182,9 @@ DELETE FROM assets WHERE bytes_b64 IS NULL OR bytes_b64 = '';
             git::git_connect,
             git::git_disconnect,
             git::git_status,
-            git::git_apply
+            git::git_apply,
+            git::git_pull,
+            git::git_remote_snapshot
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

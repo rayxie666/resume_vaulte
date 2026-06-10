@@ -4,11 +4,21 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import type { AssetUsage } from "./types";
 import {
   deleteAsset,
+  getAssetByName,
   getAssetBytes,
   listAllAssets,
+  listVersionIdsForAsset,
   renameAsset,
   upsertAsset,
 } from "./db";
+import {
+  isGitConnected,
+  pushAssetDelete,
+  pushAssetRename,
+  pushAssetsUpsert,
+  throwGitError,
+} from "./github";
+import { useSync } from "./SyncStatus";
 import { useT } from "./i18n";
 import { useDialogs } from "./Dialogs";
 
@@ -28,6 +38,7 @@ function basename(p: string): string {
 export default function AssetsPanel() {
   const t = useT();
   const dlg = useDialogs();
+  const sync = useSync();
   const [list, setList] = useState<AssetUsage[]>([]);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -85,6 +96,7 @@ export default function AssetsPanel() {
     if (!picked) return;
     const paths = Array.isArray(picked) ? picked : [picked];
     setBusy(true);
+    const uploaded: { name: string; isNew: boolean }[] = [];
     try {
       for (const p of paths) {
         const bytes = await readFile(p);
@@ -97,11 +109,25 @@ export default function AssetsPanel() {
           });
           continue;
         }
-        await upsertAsset(basename(p), bytes);
+        const name = basename(p);
+        const isNew = (await getAssetByName(name)) == null;
+        await upsertAsset(name, bytes);
+        uploaded.push({ name, isNew });
       }
       await refresh();
     } finally {
       setBusy(false);
+    }
+    if (uploaded.length > 0 && isGitConnected()) {
+      const names = uploaded.map((u) => u.name);
+      const msg =
+        uploaded.length === 1
+          ? `${uploaded[0].isNew ? "Add" : "Update"} asset "${uploaded[0].name}"`
+          : `Update ${uploaded.length} assets`;
+      void sync.run(t("sync_asset_add")(names.join(", ")), async () => {
+        const r = await pushAssetsUpsert(names, msg);
+        if (!r.success) throwGitError(r);
+      });
     }
   }
 
@@ -116,6 +142,13 @@ export default function AssetsPanel() {
     if (!name || name === a.name) return;
     await renameAsset(a.id, name);
     await refresh();
+    if (isGitConnected()) {
+      const affected = await listVersionIdsForAsset(a.id);
+      void sync.run(t("sync_asset_rename"), async () => {
+        const r = await pushAssetRename(a.name, name, affected);
+        if (!r.success) throwGitError(r);
+      });
+    }
   }
 
   async function handleDelete(a: AssetUsage) {
@@ -130,8 +163,15 @@ export default function AssetsPanel() {
       danger: true,
     });
     if (!ok) return;
+    const affected = isGitConnected() ? await listVersionIdsForAsset(a.id) : [];
     await deleteAsset(a.id);
     await refresh();
+    if (isGitConnected()) {
+      void sync.run(t("sync_asset_delete"), async () => {
+        const r = await pushAssetDelete(a.name, affected);
+        if (!r.success) throwGitError(r);
+      });
+    }
   }
 
   async function handleCopyName(a: AssetUsage) {

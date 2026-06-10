@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import type { JobCategory, ResumeKind, ResumeVersion } from "./types";
 import {
@@ -55,12 +55,20 @@ import {
   pushDeleteCategory,
   pushDeleteBulk,
   syncVaultManual,
+  throwGitError,
   categorySlug,
   versionFilePath,
   versionMetaPath,
   type GitConfig,
   type GitStatus,
 } from "./github";
+import {
+  gitPull,
+  gitRemoteSnapshot,
+  importRemoteVault,
+  snapshotHasCategories,
+  type PullSummary,
+} from "./githubPull";
 import { useSync } from "./SyncStatus";
 import { EMOJI_PICKS, GRADIENTS, gradientFor, initials } from "./iconUtils";
 import { useDialogs } from "./Dialogs";
@@ -162,6 +170,14 @@ export default function App() {
     setVersions(vs);
   }, []);
 
+  // Pull import rewrites the DB outside normal UI flows — refresh every view.
+  const handleVaultChanged = useCallback(async () => {
+    await refreshHome();
+    if (view.kind === "category" || view.kind === "version") {
+      await refreshVersions(view.categoryId);
+    }
+  }, [refreshHome, refreshVersions, view]);
+
   useEffect(() => {
     refreshHome().catch(console.error);
   }, [refreshHome]);
@@ -224,7 +240,7 @@ export default function App() {
     if (isGitConnected()) {
       void sync.run(`Delete ${c.name}`, async () => {
         const r = await pushDeleteCategory(c);
-        if (!r.success) throw new Error(r.log.slice(-400));
+        if (!r.success) throwGitError(r);
       });
     }
   }
@@ -282,7 +298,7 @@ export default function App() {
       if (cat && ver) {
         void sync.run(`${ver.name}`, async () => {
           const r = await pushNewVersion(cat, ver);
-          if (!r.success) throw new Error(r.log.slice(-400));
+          if (!r.success) throwGitError(r);
         });
       }
     }
@@ -323,7 +339,7 @@ export default function App() {
             paths,
             `Delete ${n} categor${n === 1 ? "y" : "ies"}: ${names}`,
           );
-          if (!r.success) throw new Error(r.log.slice(-400));
+          if (!r.success) throwGitError(r);
         });
       }
     } else {
@@ -360,7 +376,7 @@ export default function App() {
             paths,
             `Delete ${n} version${n === 1 ? "" : "s"} (${cat.name}): ${names}`,
           );
-          if (!r.success) throw new Error(r.log.slice(-400));
+          if (!r.success) throwGitError(r);
         });
       }
     }
@@ -387,7 +403,7 @@ export default function App() {
     if (cat) {
       void sync.run(`Delete ${v.name}`, async () => {
         const r = await pushDeleteVersion(cat, v);
-        if (!r.success) throw new Error(r.log.slice(-400));
+        if (!r.success) throwGitError(r);
       });
     }
   }
@@ -480,7 +496,12 @@ export default function App() {
         />
       )}
 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onVaultChanged={handleVaultChanged}
+        />
+      )}
 
       {selectMode && (
         <SelectBar
@@ -1114,7 +1135,13 @@ function VersionEditorModal({
   );
 }
 
-function SettingsModal({ onClose }: { onClose: () => void }) {
+function SettingsModal({
+  onClose,
+  onVaultChanged,
+}: {
+  onClose: () => void;
+  onVaultChanged: () => Promise<void>;
+}) {
   const t = useT();
   const { pref, setPref } = useLocale();
   const options: { value: LangPref; label: string }[] = [
@@ -1141,7 +1168,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
         </label>
 
-        <GitHubSection />
+        <GitHubSection onVaultChanged={onVaultChanged} />
 
         <div className="modal-actions">
           <button className="primary" onClick={onClose}>
@@ -1153,14 +1180,20 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function GitHubSection() {
+function GitHubSection({
+  onVaultChanged,
+}: {
+  onVaultChanged: () => Promise<void>;
+}) {
   const t = useT();
+  const dlg = useDialogs();
   const sync = useSync();
   const [cfg, setCfg] = useState<GitConfig>(() => loadGitConfig());
   const [status, setStatus] = useState<GitStatus | null>(null);
-  const [busy, setBusy] = useState<null | "connect" | "sync">(null);
+  const [busy, setBusy] = useState<null | "connect" | "sync" | "pull">(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [summary, setSummary] = useState<PullSummary | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -1189,6 +1222,7 @@ function GitHubSection() {
         setErr(r.log.slice(-1500));
       } else {
         setMsg(t("github_connected_to")(cfg.url));
+        await maybeRestoreFromRemote();
       }
       await refresh();
     } catch (e) {
@@ -1196,6 +1230,60 @@ function GitHubSection() {
     } finally {
       setBusy(null);
     }
+  }
+
+  // U1: connecting an empty local DB to a repo that already holds a vault →
+  // offer to import everything.
+  async function maybeRestoreFromRemote() {
+    try {
+      const cats = await listCategories();
+      if (cats.length > 0) return;
+      const snap = await gitRemoteSnapshot();
+      if (!snapshotHasCategories(snap)) return;
+      const ok = await dlg.confirm({
+        title: t("github"),
+        message: t("github_restore_prompt"),
+        confirmText: t("import"),
+        cancelText: t("cancel"),
+      });
+      if (!ok) return;
+      const sum = await importRemoteVault(snap);
+      await onVaultChanged();
+      setSummary(sum);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handlePull() {
+    setBusy("pull");
+    setErr(null);
+    setMsg(null);
+    saveGitConfig(cfg);
+    const r = await sync.run("Pull", async () => {
+      const pr = await gitPull();
+      if (!pr.success) throw new Error(pr.log.slice(-400));
+      const snap = await gitRemoteSnapshot();
+      return importRemoteVault(snap);
+    });
+    if (r) {
+      await onVaultChanged();
+      const quiet =
+        r.addedCategories === 0 &&
+        r.addedVersions === 0 &&
+        r.updatedVersions === 0 &&
+        r.addedAssets === 0 &&
+        r.updatedAssets === 0 &&
+        r.relinkedCount === 0 &&
+        r.skippedLocalNewer.length === 0 &&
+        r.skippedAssetsLocalNewer.length === 0 &&
+        r.deletionCandidates.length === 0 &&
+        r.warnings.length === 0;
+      if (quiet) setMsg(t("github_pull_up_to_date"));
+      else setSummary(r);
+    }
+    await refresh();
+    setBusy(null);
   }
 
   async function handleDisconnect() {
@@ -1219,7 +1307,7 @@ function GitHubSection() {
     saveGitConfig(cfg);
     const r = await sync.run("manual", async () => {
       const result = await syncVaultManual();
-      if (!result.success) throw new Error(result.log.slice(-400));
+      if (!result.success) throwGitError(result);
       return result;
     });
     if (r) setMsg(t("github_sync_done"));
@@ -1311,6 +1399,9 @@ function GitHubSection() {
           </button>
         ) : (
           <>
+            <button disabled={busy !== null} onClick={handlePull}>
+              {busy === "pull" ? t("github_pulling") : t("github_pull")}
+            </button>
             <button
               className="primary"
               disabled={busy !== null}
@@ -1335,6 +1426,142 @@ function GitHubSection() {
           <pre>{err}</pre>
         </details>
       )}
+
+      {summary && (
+        <PullSummaryModal
+          summary={summary}
+          onClose={() => setSummary(null)}
+          onVaultChanged={onVaultChanged}
+        />
+      )}
+    </div>
+  );
+}
+
+function PullSummaryModal({
+  summary,
+  onClose,
+  onVaultChanged,
+}: {
+  summary: PullSummary;
+  onClose: () => void;
+  onVaultChanged: () => Promise<void>;
+}) {
+  const t = useT();
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [applying, setApplying] = useState(false);
+
+  function toggle(i: number) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+
+  async function handleConfirm() {
+    if (checked.size === 0) {
+      onClose();
+      return;
+    }
+    setApplying(true);
+    try {
+      for (const i of checked) {
+        await summary.deletionCandidates[i].apply();
+      }
+      await onVaultChanged();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setApplying(false);
+      onClose();
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{t("github_pull_summary_title")}</h3>
+        <p>
+          {t("github_pull_added")(summary.addedCategories, summary.addedVersions)}
+          {" · "}
+          {t("github_pull_updated")(summary.updatedVersions)}
+        </p>
+        {(summary.addedAssets > 0 ||
+          summary.updatedAssets > 0 ||
+          summary.relinkedCount > 0) && (
+          <p>
+            {t("github_pull_assets_line")(
+              summary.addedAssets,
+              summary.updatedAssets,
+              summary.relinkedCount,
+            )}
+          </p>
+        )}
+        {summary.backedUpCheckpoints > 0 && (
+          <p>{t("github_pull_backed_up")(summary.backedUpCheckpoints)}</p>
+        )}
+
+        {(summary.skippedLocalNewer.length > 0 ||
+          summary.skippedAssetsLocalNewer.length > 0) && (
+          <div className="pull-block">
+            <div className="pull-block-title">{t("github_pull_skipped_title")}</div>
+            <ul className="pull-list">
+              {summary.skippedLocalNewer.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+              {summary.skippedAssetsLocalNewer.map((s, i) => (
+                <li key={`a${i}`}>{`${t("attachments")}: ${s}`}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {summary.deletionCandidates.length > 0 && (
+          <div className="pull-block">
+            <div className="pull-block-title pull-danger">
+              {t("github_pull_deletions_title")}
+            </div>
+            <ul className="pull-list">
+              {summary.deletionCandidates.map((d, i) => (
+                <li key={i}>
+                  <label className="pull-del">
+                    <input
+                      type="checkbox"
+                      checked={checked.has(i)}
+                      onChange={() => toggle(i)}
+                    />
+                    <span className="pull-danger">
+                      {d.kind === "asset" ? `${t("attachments")}: ${d.label}` : d.label}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {summary.warnings.length > 0 && (
+          <details className="gh-msg err">
+            <summary>
+              {t("github_pull_warnings")} ({summary.warnings.length})
+            </summary>
+            <pre>{summary.warnings.join("\n")}</pre>
+          </details>
+        )}
+
+        <div className="modal-actions">
+          {checked.size > 0 && (
+            <button onClick={onClose} disabled={applying}>
+              {t("cancel")}
+            </button>
+          )}
+          <button className="primary" onClick={handleConfirm} disabled={applying}>
+            {checked.size > 0 ? t("github_pull_delete_confirm") : t("ok")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1471,7 +1698,7 @@ function LatexEditor({
         const seq = allCps.find((c) => c.id === cpId)?.seq ?? allCps.length;
         void sync.run(`v${seq} ${freshVersion.name}`, async () => {
           const r = await pushCheckpoint(cat, freshVersion, note, seq);
-          if (!r.success) throw new Error(r.log.slice(-400));
+          if (!r.success) throwGitError(r);
         });
       }
     }
@@ -1480,6 +1707,42 @@ function LatexEditor({
   function handleRestore(content: string) {
     setCode(content);
     setDirty(true);
+  }
+
+  // Resizable editor/preview split — fraction of width given to the editor.
+  const splitRef = useRef<HTMLDivElement>(null);
+  const [split, setSplit] = useState(() => {
+    const s = Number(localStorage.getItem("rv-split"));
+    return s >= 0.25 && s <= 0.75 ? s : 0.5;
+  });
+  const [draggingSplit, setDraggingSplit] = useState(false);
+
+  function handleDividerDown(e: React.PointerEvent) {
+    e.preventDefault();
+    const el = splitRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setDraggingSplit(true);
+    const move = (ev: PointerEvent) => {
+      const f = (ev.clientX - rect.left) / rect.width;
+      setSplit(Math.min(0.75, Math.max(0.25, f)));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDraggingSplit(false);
+      setSplit((s) => {
+        localStorage.setItem("rv-split", String(s));
+        return s;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function handleDividerReset() {
+    setSplit(0.5);
+    localStorage.setItem("rv-split", "0.5");
   }
 
   return (
@@ -1518,7 +1781,11 @@ function LatexEditor({
           </button>
         </div>
       )}
-      <div className="tsx-split">
+      <div
+        className={`tsx-split ${draggingSplit ? "dragging" : ""}`}
+        ref={splitRef}
+        style={{ gridTemplateColumns: `${split}fr 6px ${1 - split}fr` }}
+      >
         <div className="code-pane">
           <CodeEditor
             value={code}
@@ -1528,7 +1795,11 @@ function LatexEditor({
             }}
           />
         </div>
-        <div className="preview-divider" />
+        <div
+          className="preview-divider"
+          onPointerDown={handleDividerDown}
+          onDoubleClick={handleDividerReset}
+        />
         <LatexPreview source={code} assets={compileAssets} />
       </div>
       {showHistory && (
@@ -1563,6 +1834,7 @@ function LatexPreview({
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [logOpen, setLogOpen] = useState(true);
 
   // Stable signature so the effect re-fires when the asset set actually changes.
   const assetsSig = assets.map((a) => `${a.name}:${a.bytesBase64.length}`).join("|");
@@ -1604,7 +1876,10 @@ function LatexPreview({
   return (
     <div className="preview">
       <div className="preview-header">
-        <span>{t("preview")}</span>
+        <span className="preview-title">{t("preview")}</span>
+        {error && !busy && (
+          <span className="preview-state err">{t("compile_error")}</span>
+        )}
         <span className="grow" />
         {error && (
           <button
@@ -1616,22 +1891,46 @@ function LatexPreview({
           </button>
         )}
         {busy && <span className="preview-busy">{t("rendering")}</span>}
+        {busy && <div className="preview-progress" />}
       </div>
-      {error ? (
-        <div className="preview-error">
-          <div className="preview-error-title">{t("compile_error")}</div>
-          <textarea
-            className="error-log"
-            readOnly
-            spellCheck={false}
-            value={error}
-          />
-        </div>
-      ) : url ? (
-        <iframe className="pdf-frame" src={url} title="preview" />
-      ) : (
-        <div className="placeholder">{t("rendering")}</div>
-      )}
+      <div className="preview-stage">
+        {url ? (
+          <iframe className="pdf-frame" src={url} title="preview" />
+        ) : !error ? (
+          <div className="placeholder">{t("rendering")}</div>
+        ) : null}
+        {error && (
+          <div
+            className={
+              url
+                ? `compile-error overlay ${logOpen ? "" : "collapsed"}`
+                : "compile-error full"
+            }
+          >
+            <div className="compile-error-head">
+              <span className="compile-error-title">{t("compile_error")}</span>
+              <span className="grow" />
+              {url && (
+                <button
+                  className="compile-error-toggle"
+                  onClick={() => setLogOpen((v) => !v)}
+                  aria-expanded={logOpen}
+                >
+                  {logOpen ? "▾" : "▸"}
+                </button>
+              )}
+            </div>
+            {(logOpen || !url) && (
+              <textarea
+                className="error-log"
+                readOnly
+                spellCheck={false}
+                value={error}
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

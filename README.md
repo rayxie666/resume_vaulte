@@ -2,8 +2,8 @@
 
 A local-first desktop app for managing multiple resume versions across job
 categories. Built with Tauri 2 + React 19 + TypeScript. Stores everything in
-local SQLite + filesystem, with optional one-way sync to a GitHub repo for
-backup and remote access.
+local SQLite + filesystem, with optional two-way sync to a GitHub repo for
+backup, remote access, and restoring the vault on a new machine.
 
 Features:
 
@@ -14,7 +14,7 @@ Features:
 - **PDF thumbnails** — first-page preview on PDF cards (PDF.js)
 - **Bulk delete** — iOS-style selection mode for categories and versions
 - **i18n** — English / 中文 / follow system
-- **GitHub sync** — push the entire vault to a private repo (PAT auth, single branch + folders)
+- **GitHub sync** — two-way sync with a private repo (PAT auth, single branch + folders): push the vault, pull remote edits back, restore a full vault on a new machine
 - **iOS-flavored UI** — light/dark mode, blur navbar, rounded cards
 
 ## Requirements
@@ -124,9 +124,11 @@ needs the files alongside `main.tex`. The app handles this via a per-version
 4. Preview recompiles automatically; assets are written to the temp dir each
    time and removed after.
 
-Attachments live in the SQLite vault (`resume_assets` table, `BLOB` column) and
-are level-deleted with the version. They are not currently synced to GitHub —
-only the `.tex` source is pushed.
+Attachments live in the SQLite vault (global `assets` table, base64-encoded)
+and are linked to versions via `resume_version_assets`. When GitHub sync is
+connected they are pushed to `assets/<name>` in the repo (with an
+`assets/_meta.json` index) and restored on pull, including the
+version↔attachment links.
 
 The Rust side rejects illegal names (`..`, slashes, dotfiles) and oversized
 files with a clear hint in the compile log.
@@ -162,6 +164,9 @@ Repo layout the app writes:
 ```
 vault.json                       # top-level index of categories
 README.md
+assets/
+  _meta.json                     # name → { mime, size, updated_at }
+  logo.png                       # attachment bytes, filename = identity
 categories/
   1-google-swe/
     _meta.json                   # category info (name, JD, icon, color, notes)

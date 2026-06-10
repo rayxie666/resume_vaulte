@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useT } from "./i18n";
+import { NEEDS_PULL_MESSAGE } from "./github";
 
 export type SyncState =
   | { kind: "idle" }
@@ -111,7 +112,9 @@ function SyncBadge({
         <>
           <span className="err-mark">✕</span>
           <span className="err-text" title={state.message}>
-            {t("github_status_failed")}
+            {state.message === NEEDS_PULL_MESSAGE
+              ? t("github_needs_pull")
+              : t("github_status_failed")}
           </span>
           <button className="err-close" onClick={onDismiss}>
             ✕

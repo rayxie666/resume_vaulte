@@ -121,6 +121,25 @@ type DictShape = {
   github_help_steps: () => string[];
   github_open_token_page: string;
   github_token_scope_hint: string;
+  github_pull: string;
+  github_pulling: string;
+  github_pull_up_to_date: string;
+  github_pull_done: string;
+  github_pull_summary_title: string;
+  github_pull_added: (cats: number, vers: number) => string;
+  github_pull_updated: (n: number) => string;
+  github_pull_backed_up: (n: number) => string;
+  github_pull_skipped_title: string;
+  github_pull_deletions_title: string;
+  github_pull_delete_confirm: string;
+  github_pull_warnings: string;
+  github_needs_pull: string;
+  github_restore_prompt: string;
+  github_pull_assets_line: (added: number, updated: number, relinked: number) => string;
+  sync_asset_add: (name: string) => string;
+  sync_asset_rename: string;
+  sync_asset_delete: string;
+  sync_attachments_update: (versionName: string) => string;
   select: string;
   select_all: string;
   deselect_all: string;
@@ -264,6 +283,31 @@ const DICT: Record<Lang, DictShape> = {
     github_open_token_page: "Open GitHub token page",
     github_token_scope_hint:
       "Required scope: Contents — Read and write. The token is saved only on this device.",
+    github_pull: "Pull from GitHub",
+    github_pulling: "Pulling…",
+    github_pull_up_to_date: "Already up to date",
+    github_pull_done: "Pull complete",
+    github_pull_summary_title: "Pull summary",
+    github_pull_added: (cats: number, vers: number) =>
+      `Added ${cats} categor${cats === 1 ? "y" : "ies"} / ${vers} version${vers === 1 ? "" : "s"}`,
+    github_pull_updated: (n: number) => `Updated ${n} version${n === 1 ? "" : "s"}`,
+    github_pull_backed_up: (n: number) =>
+      `Backed up ${n} checkpoint${n === 1 ? "" : "s"} before overwriting`,
+    github_pull_skipped_title: "Kept (local copy is newer)",
+    github_pull_deletions_title:
+      "Deleted on remote — check items to also delete locally",
+    github_pull_delete_confirm: "Apply",
+    github_pull_warnings: "Warnings",
+    github_needs_pull: "Remote has new commits — Pull from GitHub first.",
+    github_restore_prompt:
+      "This repository already contains a vault. Import it to this machine?",
+    github_pull_assets_line: (added: number, updated: number, relinked: number) =>
+      `Attachments: ${added} added, ${updated} updated, ${relinked} link${relinked === 1 ? "" : "s"} restored`,
+    sync_asset_add: (name: string) => `Asset ${name}`,
+    sync_asset_rename: "Rename asset",
+    sync_asset_delete: "Delete asset",
+    sync_attachments_update: (versionName: string) =>
+      `Attachments of ${versionName}`,
     select: "Select",
     select_all: "Select All",
     deselect_all: "Deselect All",
@@ -395,6 +439,27 @@ const DICT: Record<Lang, DictShape> = {
     github_open_token_page: "打开 GitHub Token 设置页",
     github_token_scope_hint:
       "需要权限：Contents — Read and write。Token 仅保存在本机。",
+    github_pull: "从 GitHub 拉取",
+    github_pulling: "拉取中…",
+    github_pull_up_to_date: "已是最新",
+    github_pull_done: "拉取完成",
+    github_pull_summary_title: "拉取结果",
+    github_pull_added: (cats: number, vers: number) =>
+      `新增 ${cats} 个分类 / ${vers} 个版本`,
+    github_pull_updated: (n: number) => `更新 ${n} 个版本`,
+    github_pull_backed_up: (n: number) => `覆盖前已备份 ${n} 个存档点`,
+    github_pull_skipped_title: "已保留（本地较新）",
+    github_pull_deletions_title: "远端已删除——勾选后同时删除本地",
+    github_pull_delete_confirm: "应用",
+    github_pull_warnings: "警告",
+    github_needs_pull: "远端有新提交，请先从 GitHub 拉取。",
+    github_restore_prompt: "检测到该仓库已有 vault，是否导入到本机？",
+    github_pull_assets_line: (added: number, updated: number, relinked: number) =>
+      `附件：新增 ${added}，更新 ${updated}，恢复链接 ${relinked}`,
+    sync_asset_add: (name: string) => `附件 ${name}`,
+    sync_asset_rename: "重命名附件",
+    sync_asset_delete: "删除附件",
+    sync_attachments_update: (versionName: string) => `${versionName} 的附件`,
     select: "选择",
     select_all: "全选",
     deselect_all: "全不选",

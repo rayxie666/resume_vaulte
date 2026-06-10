@@ -153,6 +153,23 @@ export async function deleteVersion(id: number): Promise<void> {
   await db.execute("DELETE FROM resume_versions WHERE id = $1", [id]);
 }
 
+export async function listAllVersions(): Promise<ResumeVersion[]> {
+  const db = await getDb();
+  return db.select<ResumeVersion[]>("SELECT * FROM resume_versions");
+}
+
+// git_key backfills deliberately skip the updated_at bump: assigning a remote
+// path identity is not a content edit and must not affect pull reconciliation.
+export async function setCategoryGitKey(id: number, key: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE job_categories SET git_key = $1 WHERE id = $2", [key, id]);
+}
+
+export async function setVersionGitKey(id: number, key: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE resume_versions SET git_key = $1 WHERE id = $2", [key, id]);
+}
+
 export async function listCheckpoints(
   versionId: number,
 ): Promise<ResumeCheckpoint[]> {
@@ -315,6 +332,17 @@ export async function unlinkAssetFromVersion(
     "DELETE FROM resume_version_assets WHERE version_id = $1 AND asset_id = $2",
     [versionId, assetId],
   );
+}
+
+export async function listVersionIdsForAsset(
+  assetId: number,
+): Promise<number[]> {
+  const db = await getDb();
+  const rows = await db.select<{ version_id: number }[]>(
+    "SELECT version_id FROM resume_version_assets WHERE asset_id = $1",
+    [assetId],
+  );
+  return rows.map((r) => r.version_id);
 }
 
 export async function assetUsageCount(assetId: number): Promise<number> {

@@ -7,6 +7,7 @@ export interface JobCategory {
   notes: string | null;
   icon: string | null;
   color: string | null;
+  git_key: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +20,7 @@ export interface ResumeVersion {
   content: string | null;
   file_path: string | null;
   notes: string | null;
+  git_key: string | null;
   created_at: string;
   updated_at: string;
 }

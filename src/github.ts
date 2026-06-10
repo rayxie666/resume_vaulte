@@ -1,11 +1,31 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { JobCategory, ResumeVersion } from "./types";
-import { listCategories, listVersions } from "./db";
+import type { Asset, JobCategory, ResumeVersion } from "./types";
+import {
+  getAssetByName,
+  getAssetBytes,
+  getCategory,
+  getVersion,
+  listAllAssets,
+  listAssetsForVersion,
+  listCategories,
+  listVersions,
+  setCategoryGitKey,
+  setVersionGitKey,
+} from "./db";
 import { readVaultPdf } from "./vault";
 
 export interface GitResult {
   success: boolean;
   log: string;
+  needs_pull: boolean;
+}
+
+// Sentinel error message for failed pushes that require a pull first; the
+// SyncBadge translates it instead of showing raw git stderr.
+export const NEEDS_PULL_MESSAGE = "__NEEDS_PULL__";
+
+export function throwGitError(r: GitResult): never {
+  throw new Error(r.needs_pull ? NEEDS_PULL_MESSAGE : r.log.slice(-400));
 }
 export interface GitStatus {
   connected: boolean;
@@ -101,12 +121,36 @@ export function slugify(s: string): string {
     .slice(0, 60) || "untitled";
 }
 
-export function categorySlug(c: { id: number; name: string }): string {
-  return `${c.id}-${slugify(c.name)}`;
+// Remote path identity. Once a row has a git_key its repo path never moves —
+// renames only change the display name inside the .json metadata.
+export function categorySlug(c: {
+  id: number;
+  name: string;
+  git_key?: string | null;
+}): string {
+  return c.git_key || `${c.id}-${slugify(c.name)}`;
 }
 
-export function versionSlug(v: { id: number; name: string }): string {
-  return `${v.id}-${slugify(v.name)}`;
+export function versionSlug(v: {
+  id: number;
+  name: string;
+  git_key?: string | null;
+}): string {
+  return v.git_key || `${v.id}-${slugify(v.name)}`;
+}
+
+// Lazy backfill: existing rows get their computed slug persisted as git_key
+// the first time they're pushed, matching the paths already on the remote.
+export async function ensureCategoryGitKey(c: JobCategory): Promise<void> {
+  if (c.git_key) return;
+  c.git_key = `${c.id}-${slugify(c.name)}`;
+  await setCategoryGitKey(c.id, c.git_key);
+}
+
+export async function ensureVersionGitKey(v: ResumeVersion): Promise<void> {
+  if (v.git_key) return;
+  v.git_key = `${v.id}-${slugify(v.name)}`;
+  await setVersionGitKey(v.id, v.git_key);
 }
 
 export function versionExtension(v: ResumeVersion): string {
@@ -150,7 +194,7 @@ function categoryMeta(c: JobCategory): string {
   );
 }
 
-function versionMeta(v: ResumeVersion): string {
+function versionMeta(v: ResumeVersion, assetNames: string[]): string {
   return (
     JSON.stringify(
       {
@@ -159,6 +203,7 @@ function versionMeta(v: ResumeVersion): string {
         name: v.name,
         kind: v.kind,
         notes: v.notes,
+        assets: assetNames,
         created_at: v.created_at,
         updated_at: v.updated_at,
       },
@@ -172,8 +217,11 @@ export async function versionToFiles(
   c: JobCategory,
   v: ResumeVersion,
 ): Promise<FileWrite[]> {
+  await ensureCategoryGitKey(c);
+  await ensureVersionGitKey(v);
+  const assetNames = (await listAssetsForVersion(v.id)).map((a) => a.name);
   const out: FileWrite[] = [];
-  out.push({ path: versionMetaPath(c, v), text: versionMeta(v) });
+  out.push({ path: versionMetaPath(c, v), text: versionMeta(v, assetNames) });
   if (v.kind === "latex") {
     out.push({ path: versionFilePath(c, v), text: v.content ?? "" });
   } else if (v.kind === "pdf" && v.file_path) {
@@ -183,6 +231,56 @@ export async function versionToFiles(
     out.push({ path: versionFilePath(c, v), text: v.content });
   }
   return out;
+}
+
+// ───── Asset serialization ─────
+
+export const ASSETS_META_PATH = "assets/_meta.json";
+
+export function assetFilePath(name: string): string {
+  return `assets/${name}`;
+}
+
+// Repo path safety: the name becomes a path segment under assets/.
+export function isValidAssetName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    !name.includes("/") &&
+    !name.includes("\\") &&
+    !name.startsWith(".")
+  );
+}
+
+export async function assetsMetaFile(): Promise<FileWrite> {
+  const all = await listAllAssets();
+  const meta: Record<
+    string,
+    { mime: string | null; size: number; updated_at: string }
+  > = {};
+  for (const a of all) {
+    meta[a.name] = { mime: a.mime, size: a.size, updated_at: a.updated_at };
+  }
+  return { path: ASSETS_META_PATH, text: JSON.stringify(meta, null, 2) + "\n" };
+}
+
+/** null when the asset has no recoverable bytes (legacy pre-b64 rows). */
+export async function assetToFile(a: Asset): Promise<FileWrite | null> {
+  if (!isValidAssetName(a.name)) return null;
+  const bytes = await getAssetBytes(a.id);
+  if (!bytes) return null;
+  return { path: assetFilePath(a.name), bytes: Array.from(bytes) };
+}
+
+/** Current meta json of a version, with git keys ensured. */
+async function versionMetaFileById(versionId: number): Promise<FileWrite | null> {
+  const v = await getVersion(versionId);
+  if (!v) return null;
+  const c = await getCategory(v.category_id);
+  if (!c) return null;
+  await ensureCategoryGitKey(c);
+  await ensureVersionGitKey(v);
+  const assetNames = (await listAssetsForVersion(v.id)).map((a) => a.name);
+  return { path: versionMetaPath(c, v), text: versionMeta(v, assetNames) };
 }
 
 export async function snapshotVault(): Promise<{
@@ -195,6 +293,7 @@ export async function snapshotVault(): Promise<{
     categories: [],
   };
   for (const c of cats) {
+    await ensureCategoryGitKey(c);
     allFiles.push({ path: categoryMetaPath(c), text: categoryMeta(c) });
     index.categories.push({
       id: c.id,
@@ -212,6 +311,11 @@ export async function snapshotVault(): Promise<{
 
 export async function syncVaultManual(): Promise<GitResult> {
   const { files, index } = await snapshotVault();
+  for (const a of await listAllAssets()) {
+    const f = await assetToFile(a);
+    if (f) files.push(f);
+  }
+  files.push(await assetsMetaFile());
   files.push({ path: "vault.json", text: index });
   files.push({
     path: "README.md",
@@ -233,6 +337,14 @@ export async function pushCheckpoint(
 ): Promise<GitResult> {
   const files = await versionToFiles(category, version);
   files.push({ path: categoryMetaPath(category), text: categoryMeta(category) });
+  // Bring the linked compile assets along so the checkpoint is buildable on
+  // any machine; unchanged bytes are a git no-op.
+  const linked = await listAssetsForVersion(version.id);
+  for (const a of linked) {
+    const f = await assetToFile(a);
+    if (f) files.push(f);
+  }
+  if (linked.length > 0) files.push(await assetsMetaFile());
   const cleanNote = (note || "").trim() || "(no note)";
   const msg = `v${seq} ${version.name} (${category.name}): ${cleanNote}`;
   return gitApply(files, [], msg, true);
@@ -252,6 +364,8 @@ export async function pushDeleteVersion(
   category: JobCategory,
   version: ResumeVersion,
 ): Promise<GitResult> {
+  await ensureCategoryGitKey(category);
+  await ensureVersionGitKey(version);
   const paths = [versionFilePath(category, version), versionMetaPath(category, version)];
   const msg = `Delete ${version.kind} version "${version.name}" (${category.name})`;
   return gitApply([], paths, msg, true);
@@ -260,6 +374,7 @@ export async function pushDeleteVersion(
 export async function pushDeleteCategory(
   category: JobCategory,
 ): Promise<GitResult> {
+  await ensureCategoryGitKey(category);
   const paths = [`categories/${categorySlug(category)}`];
   const msg = `Delete category "${category.name}"`;
   return gitApply([], paths, msg, true);
@@ -270,4 +385,81 @@ export async function pushDeleteBulk(
   summary: string,
 ): Promise<GitResult> {
   return gitApply([], paths, summary, true);
+}
+
+// ───── Asset push triggers ─────
+
+/**
+ * Upload/replace: push the named assets plus the meta index. When the upload
+ * happened inside AttachmentsModal the version's meta json rides along (its
+ * assets list gained entries).
+ */
+export async function pushAssetsUpsert(
+  names: string[],
+  commitMessage: string,
+  versionId?: number,
+): Promise<GitResult> {
+  const files: FileWrite[] = [];
+  for (const name of names) {
+    if (!isValidAssetName(name)) continue;
+    const a = await getAssetByName(name);
+    if (!a) continue;
+    const f = await assetToFile(a);
+    if (f) files.push(f);
+  }
+  files.push(await assetsMetaFile());
+  if (versionId != null) {
+    const mf = await versionMetaFileById(versionId);
+    if (mf) files.push(mf);
+  }
+  return gitApply(files, [], commitMessage, true);
+}
+
+export async function pushAssetRename(
+  oldName: string,
+  newName: string,
+  affectedVersionIds: number[],
+): Promise<GitResult> {
+  const files: FileWrite[] = [];
+  const a = await getAssetByName(newName);
+  if (a) {
+    const f = await assetToFile(a);
+    if (f) files.push(f);
+  }
+  files.push(await assetsMetaFile());
+  for (const vid of affectedVersionIds) {
+    const mf = await versionMetaFileById(vid);
+    if (mf) files.push(mf);
+  }
+  const deletes = isValidAssetName(oldName) ? [assetFilePath(oldName)] : [];
+  return gitApply(
+    files,
+    deletes,
+    `Rename asset "${oldName}" → "${newName}"`,
+    true,
+  );
+}
+
+export async function pushAssetDelete(
+  name: string,
+  affectedVersionIds: number[],
+): Promise<GitResult> {
+  const files: FileWrite[] = [await assetsMetaFile()];
+  for (const vid of affectedVersionIds) {
+    const mf = await versionMetaFileById(vid);
+    if (mf) files.push(mf);
+  }
+  const deletes = isValidAssetName(name) ? [assetFilePath(name)] : [];
+  return gitApply(files, deletes, `Delete asset "${name}"`, true);
+}
+
+/** link / unlink only — the version's assets list is part of its meta json. */
+export async function pushAttachmentsUpdate(
+  versionId: number,
+  versionName: string,
+): Promise<GitResult> {
+  const files: FileWrite[] = [];
+  const mf = await versionMetaFileById(versionId);
+  if (mf) files.push(mf);
+  return gitApply(files, [], `Update attachments of "${versionName}"`, true);
 }

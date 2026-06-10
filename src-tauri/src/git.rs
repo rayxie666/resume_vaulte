@@ -1,3 +1,5 @@
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -17,6 +19,7 @@ fn repo_dir() -> PathBuf {
 pub struct GitResult {
     pub success: bool,
     pub log: String,
+    pub needs_pull: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -112,6 +115,7 @@ pub async fn git_connect(
             return Ok(GitResult {
                 success: true,
                 log: redact(&log, &pat_clone),
+                needs_pull: false,
             });
         }
 
@@ -133,6 +137,7 @@ pub async fn git_connect(
             return Ok(GitResult {
                 success: true,
                 log: redact(&log, &pat_clone),
+                needs_pull: false,
             });
         }
 
@@ -146,6 +151,7 @@ pub async fn git_connect(
         Ok(GitResult {
             success: true,
             log: redact(&log, &pat_clone),
+            needs_pull: false,
         })
     })
     .await
@@ -166,6 +172,7 @@ pub async fn git_disconnect() -> Result<GitResult, String> {
         Ok(GitResult {
             success: true,
             log,
+            needs_pull: false,
         })
     })
     .await
@@ -337,16 +344,227 @@ pub async fn git_apply(
                 &mut log,
             )
             .map_err(|e| format!("run git failed: {e}"))?;
+            let needs_pull = !pushed
+                && (log.contains("non-fast-forward")
+                    || log.contains("fetch first")
+                    || log.contains("[rejected]"));
             return Ok(GitResult {
                 success: pushed,
                 log: redact(&log, &pat_clone),
+                needs_pull,
             });
         }
 
         Ok(GitResult {
             success: true,
             log: redact(&log, &pat_clone),
+            needs_pull: false,
         })
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+fn rev_parse(dir: &Path, rev: &str) -> Option<String> {
+    let out = Command::new("git")
+        .args(["rev-parse", "--verify", rev])
+        .current_dir(dir)
+        .output()
+        .ok()?;
+    if out.status.success() {
+        Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+fn count_revs(dir: &Path, range: &str) -> u32 {
+    Command::new("git")
+        .args(["rev-list", "--count", range])
+        .current_dir(dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
+        .unwrap_or(0)
+}
+
+#[derive(serde::Serialize)]
+pub struct GitPullResult {
+    pub success: bool,
+    pub log: String,
+    pub updated: bool,
+    pub ahead: u32,
+    pub behind: u32,
+    pub head: Option<String>,
+}
+
+#[tauri::command]
+pub async fn git_pull(
+    repo_url: String,
+    pat: String,
+    branch: String,
+) -> Result<GitPullResult, String> {
+    let pat_clone = pat.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<GitPullResult, String> {
+        let dir = repo_dir();
+        if !dir.exists() {
+            return Err("repo not connected".into());
+        }
+        let branch = if branch.trim().is_empty() {
+            "main".to_string()
+        } else {
+            branch
+        };
+        let auth = inject_token(&repo_url, &pat_clone);
+        let mut log = String::new();
+
+        // Update auth URL in case PAT rotated.
+        let _ = run_git(&["remote", "set-url", "origin", &auth], &dir, &mut log);
+        let _ = ensure_user_config(&dir, &mut log);
+
+        let remote_ref = format!("origin/{branch}");
+        let before = rev_parse(&dir, &remote_ref);
+
+        let fetched = run_git(&["fetch", "origin", &branch], &dir, &mut log)
+            .map_err(|e| format!("run git failed: {e}"))?;
+        if !fetched {
+            // A branch that doesn't exist remotely yet (fresh/empty repo) is
+            // not an error — there is simply nothing to pull.
+            let missing_ref = log.contains("couldn't find remote ref");
+            return Ok(GitPullResult {
+                success: missing_ref,
+                log: redact(&log, &pat_clone),
+                updated: false,
+                ahead: 0,
+                behind: 0,
+                head: None,
+            });
+        }
+
+        let after = rev_parse(&dir, &remote_ref);
+        let updated = before != after;
+        let ahead = count_revs(&dir, &format!("{remote_ref}..{branch}"));
+        let behind = count_revs(&dir, &format!("{branch}..{remote_ref}"));
+
+        // Align the working tree so a later push fast-forwards. Import reads
+        // origin/<branch> directly and is unaffected by this outcome.
+        let _ = run_git(&["checkout", "-B", &branch], &dir, &mut log);
+        if ahead == 0 {
+            let _ = run_git(&["reset", "--hard", &remote_ref], &dir, &mut log);
+        } else {
+            let rebased = run_git(&["rebase", &remote_ref], &dir, &mut log).unwrap_or(false);
+            if !rebased {
+                let _ = run_git(&["rebase", "--abort"], &dir, &mut log);
+                log.push_str("REBASE_CONFLICT\n");
+            }
+        }
+
+        let head = Command::new("git")
+            .args(["log", "-1", "--pretty=%h %s", &remote_ref])
+            .current_dir(&dir)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        Ok(GitPullResult {
+            success: true,
+            log: redact(&log, &pat_clone),
+            updated,
+            ahead,
+            behind,
+            head,
+        })
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+#[derive(serde::Serialize)]
+pub struct RepoFile {
+    pub path: String,
+    pub text: Option<String>,
+    pub bytes_base64: Option<String>,
+}
+
+// Matches the per-compile asset budget; anything bigger is skipped and the
+// frontend surfaces it as a warning (both content fields stay None).
+const MAX_SNAPSHOT_FILE: usize = 30 * 1024 * 1024;
+// Matches the upload limit in AssetsPanel/AttachmentsModal — oversized files
+// can only come from manual pushes and never enter the local library.
+const MAX_ASSET_FILE: usize = 5 * 1024 * 1024;
+
+#[tauri::command]
+pub async fn git_remote_snapshot(branch: String) -> Result<Vec<RepoFile>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<RepoFile>, String> {
+        let dir = repo_dir();
+        if !dir.exists() {
+            return Err("repo not connected".into());
+        }
+        let branch = if branch.trim().is_empty() {
+            "main".to_string()
+        } else {
+            branch
+        };
+        let remote_ref = format!("origin/{branch}");
+
+        let ls = Command::new("git")
+            .args(["ls-tree", "-r", "--name-only", "-z", &remote_ref])
+            .current_dir(&dir)
+            .output()
+            .map_err(|e| format!("run git failed: {e}"))?;
+        if !ls.status.success() {
+            // No remote branch yet → empty snapshot.
+            return Ok(Vec::new());
+        }
+        let names = String::from_utf8_lossy(&ls.stdout).into_owned();
+
+        let mut out = Vec::new();
+        for path in names.split('\0').filter(|p| !p.is_empty()) {
+            if path != "vault.json"
+                && !path.starts_with("categories/")
+                && !path.starts_with("assets/")
+            {
+                continue;
+            }
+            // Asset blobs are opaque binary regardless of extension; the
+            // assets/_meta.json index is the only text file in that tree.
+            let is_asset_blob = path.starts_with("assets/") && path != "assets/_meta.json";
+            let limit = if is_asset_blob {
+                MAX_ASSET_FILE
+            } else {
+                MAX_SNAPSHOT_FILE
+            };
+            let show = Command::new("git")
+                .args(["show", &format!("{remote_ref}:{path}")])
+                .current_dir(&dir)
+                .output()
+                .map_err(|e| format!("run git failed: {e}"))?;
+            if !show.status.success() || show.stdout.len() > limit {
+                out.push(RepoFile {
+                    path: path.to_string(),
+                    text: None,
+                    bytes_base64: None,
+                });
+                continue;
+            }
+            if is_asset_blob || path.ends_with(".pdf") {
+                out.push(RepoFile {
+                    path: path.to_string(),
+                    text: None,
+                    bytes_base64: Some(BASE64.encode(&show.stdout)),
+                });
+            } else {
+                out.push(RepoFile {
+                    path: path.to_string(),
+                    text: Some(String::from_utf8_lossy(&show.stdout).into_owned()),
+                    bytes_base64: None,
+                });
+            }
+        }
+        Ok(out)
     })
     .await
     .map_err(|e| format!("join error: {e}"))?

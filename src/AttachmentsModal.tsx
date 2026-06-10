@@ -4,12 +4,20 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import type { Asset, AssetUsage } from "./types";
 import {
   getAssetByName,
+  getVersion,
   linkAssetToVersion,
   listAllAssets,
   listAssetsForVersion,
   unlinkAssetFromVersion,
   upsertAsset,
 } from "./db";
+import {
+  isGitConnected,
+  pushAssetsUpsert,
+  pushAttachmentsUpdate,
+  throwGitError,
+} from "./github";
+import { useSync } from "./SyncStatus";
 import { useT } from "./i18n";
 import { useDialogs } from "./Dialogs";
 
@@ -37,9 +45,23 @@ export default function AttachmentsModal({
 }) {
   const t = useT();
   const dlg = useDialogs();
+  const sync = useSync();
   const [linked, setLinked] = useState<Asset[]>([]);
   const [library, setLibrary] = useState<AssetUsage[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // link/unlink only touch the version's meta json on the remote (§A4).
+  function pushLinkChange() {
+    if (!isGitConnected()) return;
+    void (async () => {
+      const v = await getVersion(versionId);
+      if (!v) return;
+      void sync.run(t("sync_attachments_update")(v.name), async () => {
+        const r = await pushAttachmentsUpdate(versionId, v.name);
+        if (!r.success) throwGitError(r);
+      });
+    })();
+  }
 
   const refresh = useCallback(async () => {
     setLinked(await listAssetsForVersion(versionId));
@@ -69,6 +91,7 @@ export default function AttachmentsModal({
     if (!picked) return;
     const paths = Array.isArray(picked) ? picked : [picked];
     setBusy(true);
+    const uploaded: { name: string; isNew: boolean }[] = [];
     try {
       for (const p of paths) {
         const bytes = await readFile(p);
@@ -82,13 +105,26 @@ export default function AttachmentsModal({
           continue;
         }
         const name = basename(p);
+        const isNew = (await getAssetByName(name)) == null;
         const id = await upsertAsset(name, bytes);
         await linkAssetToVersion(versionId, id);
+        uploaded.push({ name, isNew });
       }
       await refresh();
       onChanged();
     } finally {
       setBusy(false);
+    }
+    if (uploaded.length > 0 && isGitConnected()) {
+      const names = uploaded.map((u) => u.name);
+      const msg =
+        uploaded.length === 1
+          ? `${uploaded[0].isNew ? "Add" : "Update"} asset "${uploaded[0].name}"`
+          : `Update ${uploaded.length} assets`;
+      void sync.run(t("sync_asset_add")(names.join(", ")), async () => {
+        const r = await pushAssetsUpsert(names, msg, versionId);
+        if (!r.success) throwGitError(r);
+      });
     }
   }
 
@@ -96,16 +132,15 @@ export default function AttachmentsModal({
     await linkAssetToVersion(versionId, a.id);
     await refresh();
     onChanged();
+    pushLinkChange();
   }
 
   async function handleUnlink(a: Asset) {
     await unlinkAssetFromVersion(versionId, a.id);
     await refresh();
     onChanged();
+    pushLinkChange();
   }
-
-  // Suppress unused warning for getAssetByName so it stays exported via db.
-  void getAssetByName;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
