@@ -435,6 +435,37 @@ export async function pushDeleteBulk(
   return gitApply([], paths, summary, true);
 }
 
+// ───── Metadata-only push triggers (rename / edit) ─────
+
+/**
+ * Push a category's _meta.json after a rename/edit. The remote directory name
+ * is the git_key and intentionally never moves — only the metadata changes.
+ */
+export async function pushCategoryMetaUpdate(
+  categoryId: number,
+  commitMessage: string,
+): Promise<GitResult> {
+  const c = await getCategory(categoryId);
+  if (!c) return { success: true, log: "category gone", needs_pull: false };
+  await ensureCategoryGitKey(c);
+  return gitApply(
+    [{ path: categoryMetaPath(c), text: categoryMeta(c) }],
+    [],
+    commitMessage,
+    true,
+  );
+}
+
+/** Same for a version's .json — remote file stem stays put on rename. */
+export async function pushVersionMetaUpdate(
+  versionId: number,
+  commitMessage: string,
+): Promise<GitResult> {
+  const mf = await versionMetaFileById(versionId);
+  if (!mf) return { success: true, log: "version gone", needs_pull: false };
+  return gitApply([mf], [], commitMessage, true);
+}
+
 // ───── Asset push triggers ─────
 
 /**

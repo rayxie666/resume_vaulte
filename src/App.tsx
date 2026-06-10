@@ -54,6 +54,8 @@ import {
   pushDeleteVersion,
   pushDeleteCategory,
   pushDeleteBulk,
+  pushCategoryMetaUpdate,
+  pushVersionMetaUpdate,
   syncVaultManual,
   throwGitError,
   categorySlug,
@@ -1018,6 +1020,7 @@ function CategoryEditorModal({
   onSaved: () => void;
 }) {
   const t = useT();
+  const sync = useSync();
   const [name, setName] = useState(category.name);
   const [jd, setJd] = useState(category.jd_text ?? "");
   const [notes, setNotes] = useState(category.notes ?? "");
@@ -1025,13 +1028,30 @@ function CategoryEditorModal({
   const [color, setColor] = useState<string | null>(category.color);
 
   async function handleSave() {
+    const newName = name.trim();
+    const renamed = newName !== category.name;
+    const changed =
+      renamed ||
+      jd !== (category.jd_text ?? "") ||
+      notes !== (category.notes ?? "") ||
+      icon !== category.icon ||
+      color !== category.color;
     await updateCategory(category.id, {
-      name: name.trim(),
+      name: newName,
       jd_text: jd,
       notes,
       icon,
       color,
     });
+    if (changed && isGitConnected()) {
+      const msg = renamed
+        ? `Rename category "${category.name}" → "${newName}"`
+        : `Update category "${newName}"`;
+      void sync.run(newName, async () => {
+        const r = await pushCategoryMetaUpdate(category.id, msg);
+        if (!r.success) throwGitError(r);
+      });
+    }
     onSaved();
   }
 
@@ -1127,11 +1147,24 @@ function VersionEditorModal({
   onSaved: () => void;
 }) {
   const t = useT();
+  const sync = useSync();
   const [name, setName] = useState(version.name);
   const [notes, setNotes] = useState(version.notes ?? "");
 
   async function handleSave() {
-    await updateVersion(version.id, { name: name.trim(), notes });
+    const newName = name.trim();
+    const renamed = newName !== version.name;
+    const changed = renamed || notes !== (version.notes ?? "");
+    await updateVersion(version.id, { name: newName, notes });
+    if (changed && isGitConnected()) {
+      const msg = renamed
+        ? `Rename version "${version.name}" → "${newName}"`
+        : `Update version "${newName}"`;
+      void sync.run(newName, async () => {
+        const r = await pushVersionMetaUpdate(version.id, msg);
+        if (!r.success) throwGitError(r);
+      });
+    }
     onSaved();
   }
 
