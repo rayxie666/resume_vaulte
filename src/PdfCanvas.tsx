@@ -14,6 +14,9 @@ export default function PdfCanvas({ bytes }: { bytes: Uint8Array }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [zoom, setZoom] = useState(1);
   const [err, setErr] = useState<string | null>(null);
+  // Serializes destroy → create so PDF.js's shared worker isn't torn down
+  // while a new LoadingTask is being initialised.
+  const destroyChain = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     let cancelled = false;
@@ -21,21 +24,34 @@ export default function PdfCanvas({ bytes }: { bytes: Uint8Array }) {
     setErr(null);
     setDoc(null);
     (async () => {
+      // Wait for any in-flight destroy from the previous render to settle.
+      await destroyChain.current;
+      if (cancelled) return;
       try {
         loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(bytes) });
         const d = await loadingTask.promise;
         if (cancelled) {
-          await loadingTask.destroy();
+          destroyChain.current = loadingTask.destroy().catch(() => {});
           return;
         }
         setDoc(d);
       } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
+        if (cancelled) return;
+        // Transient races with worker teardown surface here; swallow that
+        // specific noise and let the next render retry.
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("worker is being destroyed")) return;
+        setErr(msg);
       }
     })();
     return () => {
       cancelled = true;
-      loadingTask?.destroy().catch(() => {});
+      if (loadingTask) {
+        const task = loadingTask;
+        destroyChain.current = destroyChain.current
+          .then(() => task.destroy())
+          .catch(() => {});
+      }
     };
   }, [bytes]);
 
