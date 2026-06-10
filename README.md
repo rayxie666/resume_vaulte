@@ -32,23 +32,57 @@ You'll need these installed before running the app:
 The app degrades gracefully if Tectonic or git are missing — LaTeX preview /
 GitHub sync just stop working, the rest still does.
 
+> **Note on Rust**: after installing via rustup, `cargo` lives in
+> `~/.cargo/bin`, which is only added to `PATH` for **new** shells (rustup
+> appends `. "$HOME/.cargo/env"` to your shell profile). In the terminal you
+> ran the installer from, run `source "$HOME/.cargo/env"` first — otherwise
+> `tauri dev` fails with a confusing `failed to run 'cargo metadata'` error
+> (see [Troubleshooting](#troubleshooting)).
+
 ## Quick start
 
 ```bash
-# clone
+# 0. verify prerequisites — all four must print a version
+node --version    # ≥ 20
+cargo --version   # ≥ 1.78  (missing? see Requirements above, then `source ~/.cargo/env`)
+cc --version      # Xcode CLT
+git --version
+
+# 1. clone
 git clone git@github.com:rayxie666/resume_vaulte.git
 cd resume_vaulte
 
-# install JS deps (Vite, React, Tauri JS plugins, pdfjs, jsdiff)
+# 2. install JS deps (Vite, React, Tauri JS plugins, pdfjs, jsdiff)
 npm install
 
-# launch in dev mode — opens a native window, hot-reload for frontend,
+# 3. launch in dev mode — opens a native window, hot-reload for frontend,
 # auto-rebuild for Rust on change
 npm run tauri dev
 ```
 
 First Rust build is slow (~1-3 min, downloads ~100 crates). Subsequent dev
 launches are seconds.
+
+## Troubleshooting
+
+**`failed to run 'cargo metadata' ... No such file or directory (os error 2)`**
+when running `npm run tauri dev` — Tauri can't find `cargo` on your `PATH`.
+Either Rust isn't installed (see [Requirements](#requirements)), or it was just
+installed and the current shell hasn't picked it up yet:
+
+```bash
+source "$HOME/.cargo/env"   # fix the current shell
+cargo --version             # should now print a version
+```
+
+New terminals get it automatically via your shell profile.
+
+**Gatekeeper blocks the built `.app`** — see
+[Building a release](#building-a-release-app--dmg) below; the binary is
+unsigned.
+
+**LaTeX preview shows nothing / compile errors about missing engine** —
+install Tectonic (`brew install tectonic`) and restart the app.
 
 ## Building a release `.app` / `.dmg`
 
