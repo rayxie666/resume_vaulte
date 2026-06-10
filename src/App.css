@@ -977,6 +977,49 @@ html, body, #root {
   min-width: 0;
 }
 
+/* ───── CodeMirror 6 LaTeX editor ───── */
+.code-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-pane .cm-wrap,
+.code-pane .cm-theme,
+.code-pane .cm-editor {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  font: 13px/1.55 "SF Mono", Menlo, Consolas, monospace;
+}
+.code-pane .cm-scroller {
+  font-family: inherit;
+}
+.code-pane .cm-content {
+  padding: 12px 0;
+}
+.code-pane .cm-gutters {
+  background: #fafafa;
+  border-right: 1px solid #ececef;
+  color: #b0b0b6;
+}
+.code-pane .cm-activeLineGutter,
+.code-pane .cm-activeLine {
+  background: rgba(0, 122, 255, 0.07);
+}
+/* Search panel pinned to bottom */
+.code-pane .cm-panels {
+  background: #fafafa;
+  border-top: 1px solid #ececef;
+  font-size: 12px;
+}
+.code-pane .cm-panels input,
+.code-pane .cm-panels button {
+  font-size: 12px;
+}
+
 .pdf-frame {
   flex: 1;
   border: none;
@@ -1451,6 +1494,25 @@ html, body, #root {
   .actions button.primary { background: #0a84ff; border-color: #0a84ff; }
   .actions button.primary:hover:not(:disabled) { background: #006edc; }
   .code { background: #1c1c1e; color: #f5f5f7; }
+  .code-pane .cm-gutters {
+    background: #1c1c1e;
+    border-right-color: #38383a;
+    color: #555;
+  }
+  .code-pane .cm-activeLineGutter,
+  .code-pane .cm-activeLine {
+    background: rgba(10, 132, 255, 0.10);
+  }
+  .code-pane .cm-panels {
+    background: #2c2c2e;
+    border-top-color: #38383a;
+    color: #f5f5f7;
+  }
+  .code-pane .cm-panels input {
+    background: #1c1c1e;
+    color: #f5f5f7;
+    border-color: #48484a;
+  }
 
   .modal { background: #1c1c1e; }
   .dlg-label { color: #98989d; }

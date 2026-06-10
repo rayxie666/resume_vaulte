@@ -37,6 +37,7 @@ import {
 import HistoryPanel from "./HistoryPanel";
 import AttachmentsModal from "./AttachmentsModal";
 import AssetsPanel from "./AssetsPanel";
+import CodeEditor from "./CodeEditor";
 import { findReferencedAssets } from "./assetScan";
 import { useThumbnail } from "./useThumbnail";
 import {
@@ -1495,15 +1496,15 @@ function LatexEditor({
         </div>
       )}
       <div className="tsx-split">
-        <textarea
-          className="code"
-          spellCheck={false}
-          value={code}
-          onChange={(e) => {
-            setCode(e.target.value);
-            setDirty(true);
-          }}
-        />
+        <div className="code-pane">
+          <CodeEditor
+            value={code}
+            onChange={(v) => {
+              setCode(v);
+              setDirty(true);
+            }}
+          />
+        </div>
         <div className="preview-divider" />
         <LatexPreview source={code} assets={compileAssets} />
       </div>

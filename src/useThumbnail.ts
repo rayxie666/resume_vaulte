@@ -3,6 +3,13 @@ import type { ResumeVersion } from "./types";
 import { readVaultPdf } from "./vault";
 import { renderPdfThumbnail } from "./thumbnail";
 import { getThumbnail, setThumbnail, setThumbnailFailure } from "./thumbCache";
+import {
+  bytesToBase64,
+  compileLatex,
+  pdfBytesFromResult,
+  type CompileAsset,
+} from "./latexCompile";
+import { getAssetBytes, listAssetsForVersion } from "./db";
 
 type Job = () => Promise<void>;
 let queue: Job[] = [];
@@ -29,17 +36,32 @@ async function fetchPdfBytes(version: ResumeVersion): Promise<Uint8Array> {
   if (version.kind === "pdf" && version.file_path) {
     return readVaultPdf(version.file_path);
   }
+  if (version.kind === "latex") {
+    const source = version.content ?? "";
+    if (!source.trim()) throw new Error("empty latex source");
+    const rows = await listAssetsForVersion(version.id);
+    const assets: CompileAsset[] = [];
+    for (const a of rows) {
+      const bytes = await getAssetBytes(a.id);
+      if (bytes) assets.push({ name: a.name, bytesBase64: bytesToBase64(bytes) });
+    }
+    const result = await compileLatex(source, assets);
+    const pdf = pdfBytesFromResult(result);
+    if (!pdf) throw new Error("latex compile failed");
+    return pdf;
+  }
   throw new Error("kind unsupported for thumbnail");
 }
 
 export type ThumbState = "loading" | "ready" | "failed" | "skipped";
 
 // Bump when the rendering pipeline changes so stale failure markers are invalidated.
-const THUMB_PIPELINE_VERSION = "v3";
+const THUMB_PIPELINE_VERSION = "v4";
 
-// Only render thumbnails for kinds where the source is already a PDF.
-// tsx/latex thumbnails are skipped to keep the version list responsive.
-const SUPPORTED_KINDS = new Set<ResumeVersion["kind"]>(["pdf"]);
+// PDF: read straight from vault. LaTeX: compile on demand, throttled by the
+// queue below so a long version list doesn't fan out into many concurrent
+// tectonic processes. tsx is still skipped (no compile path).
+const SUPPORTED_KINDS = new Set<ResumeVersion["kind"]>(["pdf", "latex"]);
 
 export function useThumbnail(version: ResumeVersion): {
   url: string | null;
