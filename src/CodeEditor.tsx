@@ -18,9 +18,21 @@ import {
   bracketMatching,
   indentOnInput,
   StreamLanguage,
+  HighlightStyle,
+  syntaxHighlighting,
 } from "@codemirror/language";
+import { tags as t } from "@lezer/highlight";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
+
+// Brand syntax theme — colors resolve from the App.css tokens, so the
+// editor follows the light/dark theme without swapping extensions.
+const brandHighlight = HighlightStyle.define([
+  { tag: [t.keyword, t.tagName], color: "var(--code-keyword)" },
+  { tag: [t.atom, t.number, t.string], color: "var(--code-literal)" },
+  { tag: t.comment, color: "var(--code-comment)", fontStyle: "italic" },
+  { tag: [t.bracket, t.paren, t.brace], color: "var(--code-bracket)" },
+]);
 
 function prefersDark(): boolean {
   if (typeof window === "undefined") return false;
@@ -57,6 +69,10 @@ export default function CodeEditor({
       autocompletion(),
       highlightSelectionMatches(),
       StreamLanguage.define(stex),
+      syntaxHighlighting(brandHighlight),
+      // Tells CM widgets (autocomplete, panels) which scheme is active;
+      // all colors come from App.css.
+      EditorView.theme({}, { dark }),
       keymap.of([
         ...defaultKeymap,
         ...historyKeymap,
@@ -65,7 +81,7 @@ export default function CodeEditor({
       ]),
       EditorView.lineWrapping,
     ],
-    [],
+    [dark],
   );
 
   return (
@@ -73,7 +89,7 @@ export default function CodeEditor({
       value={value}
       placeholder={placeholder}
       height="100%"
-      theme={dark ? "dark" : "light"}
+      theme="none"
       basicSetup={false}
       extensions={extensions}
       onChange={onChange}

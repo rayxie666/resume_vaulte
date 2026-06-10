@@ -4,7 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <title>Resume Vault</title>
+    <style>
+      /* Match the app theme before CSS loads to avoid a flash. */
+      html {
+        background: oklch(0.975 0.004 85);
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background: oklch(0.15 0.005 80);
+        }
+      }
+    </style>
   </head>
 
   <body>
