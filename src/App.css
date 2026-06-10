@@ -554,7 +554,7 @@ button {
 .page-thumb .kind-pill {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px; /* top-right is reserved for the hover edit/delete actions */
   padding: 2px 6px;
   border-radius: 5px;
   font: 700 10px/1.4 var(--font-mono);
@@ -570,6 +570,10 @@ button {
 }
 .kind-pill.kind-pdf {
   background: oklch(0.5 0.17 27 / 0.92);
+}
+/* Select mode puts the checkbox in the same corner — the pill yields. */
+.version-card.selecting .kind-pill {
+  display: none;
 }
 
 .version-meta {
