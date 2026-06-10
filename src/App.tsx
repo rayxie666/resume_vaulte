@@ -93,6 +93,7 @@ import { aiInline } from "./aiInline";
 import { EMOJI_PICKS, GRADIENTS, gradientFor, initials } from "./iconUtils";
 import { useDialogs } from "./Dialogs";
 import { useLocale, useT, type LangPref } from "./i18n";
+import { useClosing, useModalExit } from "./useClosing";
 
 // Default template: LaTeXTemplates.com Medium Length Professional CV v3.0
 // resume.cls is provided automatically by the Rust compile step.
@@ -151,8 +152,31 @@ type View =
 
 type SelectMode = null | "categories" | "versions";
 
+function viewDepth(v: View): number {
+  return v.kind === "home" ? 0 : v.kind === "version" ? 2 : 1;
+}
+
+function viewKeyOf(v: View): string {
+  switch (v.kind) {
+    case "home": return "home";
+    case "assets": return "assets";
+    case "category": return `cat:${v.categoryId}`;
+    case "version": return `ver:${v.categoryId}:${v.versionId}`;
+  }
+}
+
 export default function App() {
-  const [view, setView] = useState<View>({ kind: "home" });
+  const [view, setViewState] = useState<View>({ kind: "home" });
+  // Direction-aware navigation: deeper = push (slide from right),
+  // shallower = pop (slide from left). Computed synchronously with the view
+  // change so the keyed remount animates with the right class.
+  const [navDir, setNavDir] = useState<"push" | "pop">("push");
+  const viewRef = useRef<View>(view);
+  const setView = useCallback((next: View) => {
+    setNavDir(viewDepth(next) >= viewDepth(viewRef.current) ? "push" : "pop");
+    viewRef.current = next;
+    setViewState(next);
+  }, []);
   const [categories, setCategories] = useState<JobCategory[]>([]);
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [versions, setVersions] = useState<ResumeVersion[]>([]);
@@ -164,6 +188,7 @@ export default function App() {
   const dlg = useDialogs();
   const t = useT();
   const sync = useSync();
+  const selectBar = useClosing(selectMode !== null);
 
   const exitSelect = useCallback(() => {
     setSelectMode(null);
@@ -440,6 +465,7 @@ export default function App() {
     <div className="app">
       <NavBar
         view={view}
+        navDir={navDir}
         category={activeCategory}
         version={activeVersion}
         selectMode={selectMode}
@@ -462,6 +488,7 @@ export default function App() {
       />
 
       <main className="content">
+        <div key={viewKeyOf(view)} className={`view-stage view-enter-${navDir}`}>
         {view.kind === "home" && (
           <HomeView
             categories={categories}
@@ -498,6 +525,7 @@ export default function App() {
           />
         )}
         {view.kind === "assets" && <AssetsPanel />}
+        </div>
       </main>
 
       {editingCategory && (
@@ -532,13 +560,16 @@ export default function App() {
         />
       )}
 
-      {selectMode && (
+      {selectBar.mounted && (
         <SelectBar
+          closing={selectBar.closing}
           count={selectedIds.size}
           totalIds={
             selectMode === "categories"
               ? categories.map((c) => c.id)
-              : versions.map((v) => v.id)
+              : selectMode === "versions"
+                ? versions.map((v) => v.id)
+                : []
           }
           onSelectAll={(ids) => setSelectedIds(new Set(ids))}
           onClear={() => setSelectedIds(new Set())}
@@ -551,6 +582,7 @@ export default function App() {
 }
 
 function SelectBar({
+  closing,
   count,
   totalIds,
   onSelectAll,
@@ -558,6 +590,7 @@ function SelectBar({
   onDelete,
   onDone,
 }: {
+  closing: boolean;
   count: number;
   totalIds: number[];
   onSelectAll: (ids: number[]) => void;
@@ -568,7 +601,7 @@ function SelectBar({
   const t = useT();
   const allSelected = totalIds.length > 0 && count === totalIds.length;
   return (
-    <div className="select-bar">
+    <div className="select-bar" data-closing={closing || undefined}>
       <button
         className="bar-btn"
         onClick={() => (allSelected ? onClear() : onSelectAll(totalIds))}
@@ -594,6 +627,7 @@ function NavBar({
   view,
   category,
   version,
+  navDir,
   selectMode,
   onBack,
   onEditCategory,
@@ -606,6 +640,7 @@ function NavBar({
   view: View;
   category: JobCategory | null;
   version: ResumeVersion | null;
+  navDir: "push" | "pop";
   selectMode: SelectMode;
   onBack: () => void;
   onEditCategory: () => void;
@@ -643,8 +678,10 @@ function NavBar({
         ) : null}
       </div>
       <div className="nav-title">
-        <div className="t1">{title}</div>
-        {subtitle && <div className="t2">{subtitle}</div>}
+        <div key={`${title}|${subtitle ?? ""}`} className={`title-anim-${navDir}`}>
+          <div className="t1">{title}</div>
+          {subtitle && <div className="t2">{subtitle}</div>}
+        </div>
       </div>
       <div className="nav-right">
         {!selectMode && view.kind === "category" && category && (
@@ -721,11 +758,12 @@ function HomeView({
   const t = useT();
   return (
     <div className="grid">
-      {categories.map((c) => (
+      {categories.map((c, i) => (
         <CategoryCard
           key={c.id}
           category={c}
           count={counts[c.id] ?? 0}
+          enterIndex={i}
           onOpen={() => (selecting ? onToggle(c.id) : onOpen(c))}
           onEdit={() => onEdit(c)}
           onDelete={() => onDelete(c)}
@@ -733,14 +771,27 @@ function HomeView({
           selected={selectedIds.has(c.id)}
         />
       ))}
-      {!selecting && <AddCard label={t("new_category")} onClick={onCreate} />}
+      {!selecting && (
+        <AddCard
+          label={t("new_category")}
+          onClick={onCreate}
+          enterIndex={categories.length}
+        />
+      )}
     </div>
   );
+}
+
+/** Staggered grid entrance: per-card delay index, capped at 12 steps. */
+function enterStyle(i: number | undefined): React.CSSProperties | undefined {
+  if (i == null) return undefined;
+  return { "--i": Math.min(i, 11) } as React.CSSProperties;
 }
 
 function CategoryCard({
   category,
   count,
+  enterIndex,
   onOpen,
   onEdit,
   onDelete,
@@ -749,6 +800,7 @@ function CategoryCard({
 }: {
   category: JobCategory;
   count: number;
+  enterIndex?: number;
   onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -761,6 +813,7 @@ function CategoryCard({
   return (
     <div
       className={`card-tile ${selecting ? "selecting" : ""} ${selected ? "selected" : ""}`}
+      style={enterStyle(enterIndex)}
       onClick={onOpen}
     >
       {selecting && <SelectCheck checked={selected} />}
@@ -793,6 +846,20 @@ function CategoryCard({
   );
 }
 
+/** count-badge that pulses once when the value increases (not on mount). */
+function PulseBadge({ value }: { value: number }) {
+  const prev = useRef(value);
+  const increased = value > prev.current;
+  useEffect(() => {
+    prev.current = value;
+  });
+  return (
+    <span key={value} className={`count-badge ${increased ? "pulse" : ""}`}>
+      {value}
+    </span>
+  );
+}
+
 function SelectCheck({ checked }: { checked: boolean }) {
   return (
     <div className={`select-check ${checked ? "on" : ""}`}>
@@ -805,14 +872,20 @@ function AddCard({
   label,
   onClick,
   tall = false,
+  enterIndex,
 }: {
   label: string;
   onClick: () => void;
   tall?: boolean;
+  enterIndex?: number;
 }) {
   if (tall) {
     return (
-      <div className="version-card add-tall" onClick={onClick}>
+      <div
+        className="version-card add-tall"
+        style={enterStyle(enterIndex)}
+        onClick={onClick}
+      >
         <div className="page-thumb add-thumb">
           <span className="plus">+</span>
         </div>
@@ -823,7 +896,7 @@ function AddCard({
     );
   }
   return (
-    <div className="card-tile add" onClick={onClick}>
+    <div className="card-tile add" style={enterStyle(enterIndex)} onClick={onClick}>
       <div className="tile-icon add-icon">
         <span className="plus">+</span>
       </div>
@@ -861,14 +934,19 @@ function CategoryView({
       {category.jd_text && (
         <details className="jd-block">
           <summary>{t("job_description")}</summary>
-          <pre>{category.jd_text}</pre>
+          <div className="collapse-body">
+            <div className="collapse-inner">
+              <pre>{category.jd_text}</pre>
+            </div>
+          </div>
         </details>
       )}
       <div className="version-grid">
-        {versions.map((v) => (
+        {versions.map((v, i) => (
           <VersionCard
             key={v.id}
             version={v}
+            enterIndex={i}
             onOpen={() => (selecting ? onToggle(v.id) : onOpenVersion(v))}
             onEdit={() => onEditVersion(v)}
             onDelete={() => onDeleteVersion(v)}
@@ -882,11 +960,13 @@ function CategoryView({
               label={t("new_latex")}
               onClick={() => onAddVersion("latex")}
               tall
+              enterIndex={versions.length}
             />
             <AddCard
               label={t("import_pdf")}
               onClick={() => onAddVersion("pdf")}
               tall
+              enterIndex={versions.length + 1}
             />
           </>
         )}
@@ -897,6 +977,7 @@ function CategoryView({
 
 function VersionCard({
   version,
+  enterIndex,
   onOpen,
   onEdit,
   onDelete,
@@ -904,6 +985,7 @@ function VersionCard({
   selected,
 }: {
   version: ResumeVersion;
+  enterIndex?: number;
   onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -924,12 +1006,18 @@ function VersionCard({
   return (
     <div
       className={`version-card ${selecting ? "selecting" : ""} ${selected ? "selected" : ""}`}
+      style={enterStyle(enterIndex)}
       onClick={onOpen}
     >
       {selecting && <SelectCheck checked={selected} />}
       <div className={`page-thumb ${showThumb ? "" : "no-thumb"}`}>
         {showThumb ? (
-          <img src={thumbUrl} alt={version.name} />
+          <img
+            key={thumbUrl}
+            src={thumbUrl}
+            alt={version.name}
+            onLoad={(e) => e.currentTarget.classList.add("loaded")}
+          />
         ) : (
           <div className="thumb-placeholder" style={{ background: bg }}>
             <span className="letters">{symbol}</span>
@@ -1023,6 +1111,7 @@ function CategoryEditorModal({
 }) {
   const t = useT();
   const sync = useSync();
+  const { closing, close } = useModalExit(onClose);
   const [name, setName] = useState(category.name);
   const [jd, setJd] = useState(category.jd_text ?? "");
   const [notes, setNotes] = useState(category.notes ?? "");
@@ -1058,7 +1147,11 @@ function CategoryEditorModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      data-closing={closing || undefined}
+      onClick={close}
+    >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{t("edit_category")}</h3>
 
@@ -1129,7 +1222,7 @@ function CategoryEditorModal({
         </label>
 
         <div className="modal-actions">
-          <button onClick={onClose}>{t("cancel")}</button>
+          <button onClick={close}>{t("cancel")}</button>
           <button className="primary" onClick={handleSave}>
             {t("save")}
           </button>
@@ -1150,6 +1243,7 @@ function VersionEditorModal({
 }) {
   const t = useT();
   const sync = useSync();
+  const { closing, close } = useModalExit(onClose);
   const [name, setName] = useState(version.name);
   const [notes, setNotes] = useState(version.notes ?? "");
 
@@ -1171,7 +1265,11 @@ function VersionEditorModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      data-closing={closing || undefined}
+      onClick={close}
+    >
       <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
         <h3>{t("edit_version")}</h3>
         <label className="field">
@@ -1187,7 +1285,7 @@ function VersionEditorModal({
           />
         </label>
         <div className="modal-actions">
-          <button onClick={onClose}>{t("cancel")}</button>
+          <button onClick={close}>{t("cancel")}</button>
           <button
             className="primary"
             onClick={handleSave}
@@ -1210,13 +1308,18 @@ function SettingsModal({
 }) {
   const t = useT();
   const { pref, setPref } = useLocale();
+  const { closing, close } = useModalExit(onClose);
   const options: { value: LangPref; label: string }[] = [
     { value: "system", label: t("lang_system") },
     { value: "en", label: t("lang_en") },
     { value: "zh", label: t("lang_zh") },
   ];
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      data-closing={closing || undefined}
+      onClick={close}
+    >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{t("settings")}</h3>
         <label className="field">
@@ -1239,7 +1342,7 @@ function SettingsModal({
         <AiSection />
 
         <div className="modal-actions">
-          <button className="primary" onClick={onClose}>
+          <button className="primary" onClick={close}>
             {t("ok")}
           </button>
         </div>
@@ -1571,25 +1674,29 @@ function GitHubSection({
       </label>
       <details className="gh-help-details">
         <summary>{t("github_help_title")}</summary>
-        <ol className="gh-help-steps">
-          {t("github_help_steps")().map((s, i) => (
-            <li key={i}>{s}</li>
-          ))}
-        </ol>
-        <div className="gh-help-actions">
-          <button
-            type="button"
-            className="link"
-            onClick={() =>
-              openUrl(
-                "https://github.com/settings/personal-access-tokens/new",
-              ).catch(console.error)
-            }
-          >
-            {t("github_open_token_page")} ↗
-          </button>
+        <div className="collapse-body">
+          <div className="collapse-inner">
+            <ol className="gh-help-steps">
+              {t("github_help_steps")().map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ol>
+            <div className="gh-help-actions">
+              <button
+                type="button"
+                className="link"
+                onClick={() =>
+                  openUrl(
+                    "https://github.com/settings/personal-access-tokens/new",
+                  ).catch(console.error)
+                }
+              >
+                {t("github_open_token_page")} ↗
+              </button>
+            </div>
+            <p className="gh-help-scope">{t("github_token_scope_hint")}</p>
+          </div>
         </div>
-        <p className="gh-help-scope">{t("github_token_scope_hint")}</p>
       </details>
       <label className="field">
         <span>{t("github_branch")}</span>
@@ -1679,6 +1786,7 @@ function PullSummaryModal({
   onVaultChanged: () => Promise<void>;
 }) {
   const t = useT();
+  const { closing, close } = useModalExit(onClose);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [applying, setApplying] = useState(false);
 
@@ -1693,7 +1801,7 @@ function PullSummaryModal({
 
   async function handleConfirm() {
     if (checked.size === 0) {
-      onClose();
+      close();
       return;
     }
     setApplying(true);
@@ -1706,12 +1814,16 @@ function PullSummaryModal({
       console.error(e);
     } finally {
       setApplying(false);
-      onClose();
+      close();
     }
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      data-closing={closing || undefined}
+      onClick={close}
+    >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{t("github_pull_summary_title")}</h3>
         <p>
@@ -1787,7 +1899,7 @@ function PullSummaryModal({
 
         <div className="modal-actions">
           {checked.size > 0 && (
-            <button onClick={onClose} disabled={applying}>
+            <button onClick={close} disabled={applying}>
               {t("cancel")}
             </button>
           )}
@@ -2033,9 +2145,19 @@ function LatexEditor({
     }
   }
 
+  // One-shot brand-tint fade on the editor after restoring a checkpoint —
+  // answers "what just happened" without a dialog.
+  const [restoreFlash, setRestoreFlash] = useState(false);
+  useEffect(() => {
+    if (!restoreFlash) return;
+    const id = window.setTimeout(() => setRestoreFlash(false), 650);
+    return () => window.clearTimeout(id);
+  }, [restoreFlash]);
+
   function handleRestore(content: string) {
     setCode(content);
     setDirty(true);
+    setRestoreFlash(true);
   }
 
   // Resizable editor/preview split — fraction of width given to the editor.
@@ -2082,15 +2204,11 @@ function LatexEditor({
         </button>
         <button onClick={() => setShowHistory(true)}>
           {t("history")}
-          {checkpointCount > 0 && (
-            <span className="count-badge">{checkpointCount}</span>
-          )}
+          {checkpointCount > 0 && <PulseBadge value={checkpointCount} />}
         </button>
         <button onClick={() => setShowAttachments(true)}>
           {t("attachments")}
-          {assetCount > 0 && (
-            <span className="count-badge">{assetCount}</span>
-          )}
+          {assetCount > 0 && <PulseBadge value={assetCount} />}
         </button>
         <span className="grow" />
         <button onClick={handleSave} disabled={!dirty}>
@@ -2115,7 +2233,7 @@ function LatexEditor({
         ref={splitRef}
         style={{ gridTemplateColumns: `${split}fr 6px ${1 - split}fr` }}
       >
-        <div className="code-pane">
+        <div className={`code-pane ${restoreFlash ? "restore-flash" : ""}`}>
           <CodeEditor
             value={code}
             onChange={(v) => {
@@ -2167,7 +2285,11 @@ function LatexPreview({
   onRendered?: (source: string, pdf: Uint8Array) => void;
 }) {
   const t = useT();
+  // Double-buffered "paper settle": the fresh page renders in a hidden
+  // overlay iframe, cross-fades in once loaded, then becomes `url`.
   const [url, setUrl] = useState<string | null>(null);
+  const [incoming, setIncoming] = useState<string | null>(null);
+  const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(true);
@@ -2189,10 +2311,13 @@ function LatexPreview({
             type: "application/pdf",
           });
           const next = URL.createObjectURL(blob);
-          setUrl((old) => {
+          // A newer compile simply replaces a still-pending incoming page —
+          // never more than two iframes alive.
+          setIncoming((old) => {
             if (old) URL.revokeObjectURL(old);
             return next;
           });
+          setSettled(false);
           setError(null);
         } else {
           setError(r.log.trim() || t("compile_error"));
@@ -2211,6 +2336,29 @@ function LatexPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, assetsSig]);
 
+  // Promote incoming → current after the settle animation. Timeout-driven
+  // (not animationend) so reduced-motion still completes the swap.
+  useEffect(() => {
+    if (!settled || !incoming) return;
+    const id = window.setTimeout(() => {
+      setUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return incoming;
+      });
+      setIncoming(null);
+      setSettled(false);
+    }, 280);
+    return () => window.clearTimeout(id);
+  }, [settled, incoming]);
+
+  // Copy-log confirmation: brief ✓, then back.
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const id = window.setTimeout(() => setCopied(false), 800);
+    return () => window.clearTimeout(id);
+  }, [copied]);
+
   return (
     <div className="preview">
       <div className="preview-header">
@@ -2222,10 +2370,13 @@ function LatexPreview({
         {error && (
           <button
             className="link-btn"
-            onClick={() => navigator.clipboard.writeText(error)}
+            onClick={() => {
+              navigator.clipboard.writeText(error).catch(() => undefined);
+              setCopied(true);
+            }}
             title="Copy full log"
           >
-            Copy log
+            {copied ? "✓ Copied" : "Copy log"}
           </button>
         )}
         {busy && <span className="preview-busy">{t("rendering")}</span>}
@@ -2234,9 +2385,18 @@ function LatexPreview({
       <div className="preview-stage">
         {url ? (
           <iframe className="pdf-frame" src={url} title="preview" />
-        ) : !error ? (
+        ) : !error && !incoming ? (
           <div className="placeholder">{t("rendering")}</div>
         ) : null}
+        {incoming && (
+          <iframe
+            key={incoming}
+            className={`pdf-frame incoming ${settled ? "settle" : ""}`}
+            src={incoming}
+            title="preview-incoming"
+            onLoad={() => setSettled(true)}
+          />
+        )}
         {error && (
           <div
             className={

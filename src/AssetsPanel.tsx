@@ -174,12 +174,21 @@ export default function AssetsPanel() {
     }
   }
 
+  // Copy confirmation: which asset id briefly shows ✓.
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  useEffect(() => {
+    if (copiedId == null) return;
+    const id = window.setTimeout(() => setCopiedId(null), 800);
+    return () => window.clearTimeout(id);
+  }, [copiedId]);
+
   async function handleCopyName(a: AssetUsage) {
     try {
       await navigator.clipboard.writeText(a.name);
     } catch {
       // ignore
     }
+    setCopiedId(a.id);
   }
 
   return (
@@ -205,11 +214,20 @@ export default function AssetsPanel() {
         </div>
       ) : (
         <div className="assets-grid">
-          {filtered.map((a) => (
-            <div key={a.id} className="asset-card">
+          {filtered.map((a, i) => (
+            <div
+              key={a.id}
+              className="asset-card"
+              style={{ "--i": Math.min(i, 11) } as React.CSSProperties}
+            >
               <div className="asset-thumb">
                 {thumbs[a.id] ? (
-                  <img src={thumbs[a.id]} alt={a.name} />
+                  <img
+                    key={thumbs[a.id]}
+                    src={thumbs[a.id]}
+                    alt={a.name}
+                    onLoad={(e) => e.currentTarget.classList.add("loaded")}
+                  />
                 ) : (
                   <span className="asset-mono">
                     {(a.name.split(".").pop() ?? "?").toUpperCase()}
@@ -231,7 +249,7 @@ export default function AssetsPanel() {
                   title={t("copy_reference_name")}
                   onClick={() => handleCopyName(a)}
                 >
-                  ⧉
+                  {copiedId === a.id ? "✓" : "⧉"}
                 </button>
                 <button
                   className="link-btn"

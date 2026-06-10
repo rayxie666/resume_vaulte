@@ -6,6 +6,7 @@ import { isGitConnected, pushHistoryUpdate, throwGitError } from "./github";
 import { useSync } from "./SyncStatus";
 import { useT } from "./i18n";
 import { useDialogs } from "./Dialogs";
+import { useModalExit } from "./useClosing";
 
 interface Props {
   versionId: number;
@@ -23,6 +24,7 @@ export default function HistoryPanel({
   const t = useT();
   const dlg = useDialogs();
   const sync = useSync();
+  const { closing, close } = useModalExit(onClose);
   const [list, setList] = useState<ResumeCheckpoint[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -72,18 +74,22 @@ export default function HistoryPanel({
     });
     if (!ok) return;
     onRestore(c.content);
-    onClose();
+    close();
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      data-closing={closing || undefined}
+      onClick={close}
+    >
       <div
         className="modal history-modal"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="history-header">
           <h3>{t("history")}</h3>
-          <button className="link-btn" onClick={onClose}>
+          <button className="link-btn" onClick={close}>
             ✕
           </button>
         </header>

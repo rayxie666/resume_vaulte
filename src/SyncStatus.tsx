@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useT } from "./i18n";
 import { NEEDS_PULL_MESSAGE } from "./github";
+import { useClosing } from "./useClosing";
 
 export type SyncState =
   | { kind: "idle" }
@@ -84,35 +85,41 @@ function SyncBadge({
   onDismiss: () => void;
 }) {
   const t = useT();
-  if (state.kind === "idle") return null;
+  const { mounted, closing } = useClosing(state.kind !== "idle");
+  // Render the last non-idle state through the exit animation.
+  const lastShown = useRef<SyncState>(state);
+  if (state.kind !== "idle") lastShown.current = state;
+  if (!mounted) return null;
+  const shown = state.kind === "idle" ? lastShown.current : state;
+  if (shown.kind === "idle") return null;
   const cls =
-    state.kind === "syncing"
+    shown.kind === "syncing"
       ? "sync-badge syncing"
-      : state.kind === "success"
+      : shown.kind === "success"
         ? "sync-badge ok"
         : "sync-badge err";
   return (
-    <div className={cls}>
-      {state.kind === "syncing" && (
+    <div className={cls} data-closing={closing || undefined}>
+      {shown.kind === "syncing" && (
         <>
           <span className="spin-dot" />
           <span>
             {t("github_status_syncing")}
-            {state.label ? ` — ${state.label}` : ""}
+            {shown.label ? ` — ${shown.label}` : ""}
           </span>
         </>
       )}
-      {state.kind === "success" && (
+      {shown.kind === "success" && (
         <>
           <span className="ok-mark">✓</span>
           <span>{t("github_status_synced")}</span>
         </>
       )}
-      {state.kind === "error" && (
+      {shown.kind === "error" && (
         <>
           <span className="err-mark">✕</span>
-          <span className="err-text" title={state.message}>
-            {state.message === NEEDS_PULL_MESSAGE
+          <span className="err-text" title={shown.message}>
+            {shown.message === NEEDS_PULL_MESSAGE
               ? t("github_needs_pull")
               : t("github_status_failed")}
           </span>

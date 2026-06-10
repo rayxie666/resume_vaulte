@@ -20,6 +20,7 @@ import {
 import { useSync } from "./SyncStatus";
 import { useT } from "./i18n";
 import { useDialogs } from "./Dialogs";
+import { useModalExit } from "./useClosing";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -46,6 +47,7 @@ export default function AttachmentsModal({
   const t = useT();
   const dlg = useDialogs();
   const sync = useSync();
+  const { closing, close } = useModalExit(onClose);
   const [linked, setLinked] = useState<Asset[]>([]);
   const [library, setLibrary] = useState<AssetUsage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -143,7 +145,11 @@ export default function AttachmentsModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      data-closing={closing || undefined}
+      onClick={close}
+    >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{t("attachments")}</h3>
 
@@ -195,7 +201,7 @@ export default function AttachmentsModal({
         )}
 
         <div className="modal-actions">
-          <button onClick={onClose}>{t("done")}</button>
+          <button onClick={close}>{t("done")}</button>
           <button className="primary" disabled={busy} onClick={handleUpload}>
             + {t("add_attachment")}
           </button>
