@@ -1,7 +1,9 @@
-import * as pdfjsLib from "pdfjs-dist";
-import PdfWorker from "pdfjs-dist/build/pdf.worker.mjs?worker";
-
-pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker();
+// Legacy build on purpose: the modern build of pdfjs-dist 6.x uses
+// Map.prototype.getOrInsertComputed, which this app's WKWebView doesn't
+// ship yet — every render died with a TypeError. The legacy build
+// transpiles such features away.
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import PdfWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs?worker";
 
 export async function renderPdfThumbnail(
   bytes: Uint8Array,
@@ -9,9 +11,17 @@ export async function renderPdfThumbnail(
 ): Promise<string> {
   // pdfjs may mutate the buffer; copy to be safe.
   const buf = new Uint8Array(bytes);
-  const loadingTask = pdfjsLib.getDocument({ data: buf });
-  const doc = await loadingTask.promise;
+  // One private worker per render. A shared GlobalWorkerOptions.workerPort
+  // breaks here: pdf.js forbids two concurrent documents on one port, and
+  // loadingTask.destroy() tears the shared port down for every later call —
+  // after the first thumbnail, all renders failed.
+  const port = new PdfWorker();
+  // pdfjs-dist 6.x ships a broken constructor type (`port?: null`) that
+  // contradicts its own @property {Worker} [port] docs — cast around it.
+  const worker = new pdfjsLib.PDFWorker({ port: port as unknown as null });
+  const loadingTask = pdfjsLib.getDocument({ data: buf, worker });
   try {
+    const doc = await loadingTask.promise;
     const page = await doc.getPage(1);
     const vp1 = page.getViewport({ scale: 1 });
     const scale = Math.min(maxDim / vp1.width, maxDim / vp1.height);
@@ -30,6 +40,8 @@ export async function renderPdfThumbnail(
     await page.render({ canvas, viewport }).promise;
     return canvas.toDataURL("image/png");
   } finally {
-    await loadingTask.destroy();
+    await loadingTask.destroy().catch(() => undefined);
+    worker.destroy();
+    port.terminate();
   }
 }

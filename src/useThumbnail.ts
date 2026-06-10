@@ -9,7 +9,8 @@ import {
   pdfBytesFromResult,
   type CompileAsset,
 } from "./latexCompile";
-import { getAssetBytes, listAssetsForVersion } from "./db";
+import { getAssetBytes, getAssetByName, listAssetsForVersion } from "./db";
+import { findReferencedAssets } from "./assetScan";
 
 type Job = () => Promise<void>;
 let queue: Job[] = [];
@@ -39,9 +40,22 @@ async function fetchPdfBytes(version: ResumeVersion): Promise<Uint8Array> {
   if (version.kind === "latex") {
     const source = version.content ?? "";
     if (!source.trim()) throw new Error("empty latex source");
+    // Linked assets ∪ source-referenced assets found in the global library —
+    // mirrors the editor's compile bundle so unlinked-but-available images
+    // don't fail the thumbnail.
     const rows = await listAssetsForVersion(version.id);
+    const byName = new Map(rows.map((a) => [a.name, a]));
+    for (const name of findReferencedAssets(source)) {
+      if (byName.has(name)) continue;
+      const found =
+        (await getAssetByName(name)) ??
+        (await getAssetByName(`${name}.png`)) ??
+        (await getAssetByName(`${name}.jpg`)) ??
+        (await getAssetByName(`${name}.pdf`));
+      if (found && !byName.has(found.name)) byName.set(found.name, found);
+    }
     const assets: CompileAsset[] = [];
-    for (const a of rows) {
+    for (const a of byName.values()) {
       const bytes = await getAssetBytes(a.id);
       if (bytes) assets.push({ name: a.name, bytesBase64: bytesToBase64(bytes) });
     }
