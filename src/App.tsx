@@ -58,6 +58,7 @@ import {
   throwGitError,
   categorySlug,
   versionFilePath,
+  versionHistoryPath,
   versionMetaPath,
   type GitConfig,
   type GitStatus,
@@ -360,7 +361,11 @@ export default function App() {
       const paths: string[] = [];
       for (const v of toDelete) {
         if (cat) {
-          paths.push(versionFilePath(cat, v), versionMetaPath(cat, v));
+          paths.push(
+            versionFilePath(cat, v),
+            versionMetaPath(cat, v),
+            versionHistoryPath(cat, v),
+          );
         }
         if (v.file_path) await removeVaultFile(v.file_path);
         await deleteVersion(v.id);
@@ -1275,6 +1280,7 @@ function GitHubSection({
         r.addedAssets === 0 &&
         r.updatedAssets === 0 &&
         r.relinkedCount === 0 &&
+        r.restoredCheckpoints === 0 &&
         r.skippedLocalNewer.length === 0 &&
         r.skippedAssetsLocalNewer.length === 0 &&
         r.deletionCandidates.length === 0 &&
@@ -1498,6 +1504,9 @@ function PullSummaryModal({
               summary.relinkedCount,
             )}
           </p>
+        )}
+        {summary.restoredCheckpoints > 0 && (
+          <p>{t("github_pull_checkpoints_line")(summary.restoredCheckpoints)}</p>
         )}
         {summary.backedUpCheckpoints > 0 && (
           <p>{t("github_pull_backed_up")(summary.backedUpCheckpoints)}</p>

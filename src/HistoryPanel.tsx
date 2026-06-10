@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { diffLines } from "diff";
 import type { ResumeCheckpoint } from "./types";
-import { deleteCheckpoint, listCheckpoints } from "./db";
+import { deleteCheckpoint, getVersion, listCheckpoints } from "./db";
+import { isGitConnected, pushHistoryUpdate, throwGitError } from "./github";
+import { useSync } from "./SyncStatus";
 import { useT } from "./i18n";
 import { useDialogs } from "./Dialogs";
 
@@ -20,6 +22,7 @@ export default function HistoryPanel({
 }: Props) {
   const t = useT();
   const dlg = useDialogs();
+  const sync = useSync();
   const [list, setList] = useState<ResumeCheckpoint[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -47,6 +50,17 @@ export default function HistoryPanel({
     if (!ok) return;
     await deleteCheckpoint(c.id);
     await refresh();
+    if (isGitConnected()) {
+      const v = await getVersion(versionId);
+      if (!v) return;
+      void sync.run(t("sync_checkpoint_delete")(c.seq, v.name), async () => {
+        const r = await pushHistoryUpdate(
+          versionId,
+          `Delete checkpoint v${c.seq} of "${v.name}"`,
+        );
+        if (!r.success) throwGitError(r);
+      });
+    }
   }
 
   async function handleRestore(c: ResumeCheckpoint) {

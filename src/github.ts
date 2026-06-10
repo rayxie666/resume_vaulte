@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Asset, JobCategory, ResumeVersion } from "./types";
+import type { Asset, JobCategory, ResumeCheckpoint, ResumeVersion } from "./types";
 import {
   getAssetByName,
   getAssetBytes,
@@ -8,6 +8,7 @@ import {
   listAllAssets,
   listAssetsForVersion,
   listCategories,
+  listCheckpoints,
   listVersions,
   setCategoryGitKey,
   setVersionGitKey,
@@ -174,6 +175,10 @@ export function categoryMetaPath(c: JobCategory): string {
   return `categories/${categorySlug(c)}/_meta.json`;
 }
 
+export function versionHistoryPath(c: JobCategory, v: ResumeVersion): string {
+  return `categories/${categorySlug(c)}/${versionSlug(v)}.history.json`;
+}
+
 // ───── Serialization helpers ─────
 function categoryMeta(c: JobCategory): string {
   return (
@@ -271,6 +276,38 @@ export async function assetToFile(a: Asset): Promise<FileWrite | null> {
   return { path: assetFilePath(a.name), bytes: Array.from(bytes) };
 }
 
+// ───── Checkpoint history serialization ─────
+
+function historyJson(cps: ResumeCheckpoint[]): string {
+  const sorted = [...cps].sort((a, b) => a.seq - b.seq);
+  return (
+    JSON.stringify(
+      {
+        checkpoints: sorted.map((c) => ({
+          seq: c.seq,
+          note: c.note,
+          created_at: c.created_at,
+          content: c.content,
+        })),
+      },
+      null,
+      2,
+    ) + "\n"
+  );
+}
+
+/** null when the version has no checkpoints — don't create empty files. */
+export async function versionHistoryFile(
+  c: JobCategory,
+  v: ResumeVersion,
+): Promise<FileWrite | null> {
+  await ensureCategoryGitKey(c);
+  await ensureVersionGitKey(v);
+  const cps = await listCheckpoints(v.id);
+  if (cps.length === 0) return null;
+  return { path: versionHistoryPath(c, v), text: historyJson(cps) };
+}
+
 /** Current meta json of a version, with git keys ensured. */
 async function versionMetaFileById(versionId: number): Promise<FileWrite | null> {
   const v = await getVersion(versionId);
@@ -304,6 +341,10 @@ export async function snapshotVault(): Promise<{
     for (const v of versions) {
       const vf = await versionToFiles(c, v);
       allFiles.push(...vf);
+      if (v.kind !== "pdf") {
+        const hf = await versionHistoryFile(c, v);
+        if (hf) allFiles.push(hf);
+      }
     }
   }
   return { files: allFiles, index: JSON.stringify(index, null, 2) + "\n" };
@@ -345,6 +386,9 @@ export async function pushCheckpoint(
     if (f) files.push(f);
   }
   if (linked.length > 0) files.push(await assetsMetaFile());
+  // History rides along — at this point it already contains the new checkpoint.
+  const hf = await versionHistoryFile(category, version);
+  if (hf) files.push(hf);
   const cleanNote = (note || "").trim() || "(no note)";
   const msg = `v${seq} ${version.name} (${category.name}): ${cleanNote}`;
   return gitApply(files, [], msg, true);
@@ -366,7 +410,11 @@ export async function pushDeleteVersion(
 ): Promise<GitResult> {
   await ensureCategoryGitKey(category);
   await ensureVersionGitKey(version);
-  const paths = [versionFilePath(category, version), versionMetaPath(category, version)];
+  const paths = [
+    versionFilePath(category, version),
+    versionMetaPath(category, version),
+    versionHistoryPath(category, version),
+  ];
   const msg = `Delete ${version.kind} version "${version.name}" (${category.name})`;
   return gitApply([], paths, msg, true);
 }
@@ -451,6 +499,24 @@ export async function pushAssetDelete(
   }
   const deletes = isValidAssetName(name) ? [assetFilePath(name)] : [];
   return gitApply(files, deletes, `Delete asset "${name}"`, true);
+}
+
+/**
+ * Re-push a version's checkpoint history after a local deletion. Writes the
+ * file even when the list is now empty so the remote shrinks accordingly.
+ */
+export async function pushHistoryUpdate(
+  versionId: number,
+  commitMessage: string,
+): Promise<GitResult> {
+  const v = await getVersion(versionId);
+  const c = v ? await getCategory(v.category_id) : null;
+  if (!v || !c) return { success: true, log: "version gone", needs_pull: false };
+  await ensureCategoryGitKey(c);
+  await ensureVersionGitKey(v);
+  const cps = await listCheckpoints(v.id);
+  const file = { path: versionHistoryPath(c, v), text: historyJson(cps) };
+  return gitApply([file], [], commitMessage, true);
 }
 
 /** link / unlink only — the version's assets list is part of its meta json. */

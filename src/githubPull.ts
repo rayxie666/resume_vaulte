@@ -69,6 +69,15 @@ interface RemoteVersion {
   pdfBase64: string | null;
   // Explicit attachment links; null = pre-asset-sync meta (leave links alone).
   assetNames: string[] | null;
+  // null = no history file (pre-checkpoint-sync repo) → leave local history alone.
+  checkpoints: RemoteCheckpoint[] | null;
+}
+
+interface RemoteCheckpoint {
+  seq: number;
+  note: string | null;
+  created_at: string;
+  content: string;
 }
 
 interface RemoteCategory {
@@ -102,7 +111,10 @@ export function parseSnapshot(files: RepoFile[]): RemoteVault {
   interface DirEntry {
     metaText: string | null;
     // stem → partial file contents
-    stems: Map<string, { json?: string; tex?: string; txt?: string; pdf?: string }>;
+    stems: Map<
+      string,
+      { json?: string; tex?: string; txt?: string; pdf?: string; history?: string }
+    >;
   }
   const dirs = new Map<string, DirEntry>();
   const assetBlobs = new Map<string, string>(); // name → base64
@@ -146,6 +158,15 @@ export function parseSnapshot(files: RepoFile[]): RemoteVault {
     }
     if (fname === "_meta.json") {
       entry.metaText = f.text;
+      continue;
+    }
+    // The double extension must win over the generic split below, which
+    // would misread "<vk>.history.json" as an orphan json for stem "<vk>.history".
+    if (fname.endsWith(".history.json") && fname.length > ".history.json".length) {
+      const stem = fname.slice(0, -".history.json".length);
+      const rec = entry.stems.get(stem) ?? {};
+      rec.history = f.text ?? undefined;
+      entry.stems.set(stem, rec);
       continue;
     }
     const dot = fname.lastIndexOf(".");
@@ -225,6 +246,15 @@ export function parseSnapshot(files: RepoFile[]): RemoteVault {
         warnings.push(`${where}: content file missing, version skipped`);
         continue;
       }
+      // History parse failures never block content import.
+      let checkpoints: RemoteCheckpoint[] | null = null;
+      if (rec.history != null) {
+        if (kind === "pdf") {
+          warnings.push(`${where}.history.json: pdf versions have no history, ignored`);
+        } else {
+          checkpoints = parseHistory(rec.history, `${where}.history.json`, warnings);
+        }
+      }
       versions.push({
         key: stem,
         name: vName,
@@ -235,6 +265,7 @@ export function parseSnapshot(files: RepoFile[]): RemoteVault {
         text: text ?? null,
         pdfBase64: pdfBase64 ?? null,
         assetNames,
+        checkpoints,
       });
     }
     categories.push({ key: dir, meta, versions });
@@ -264,6 +295,49 @@ export function parseSnapshot(files: RepoFile[]): RemoteVault {
   return { categories, assets, hasAssetsMeta, warnings };
 }
 
+function parseHistory(
+  raw: string,
+  where: string,
+  warnings: string[],
+): RemoteCheckpoint[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    warnings.push(`${where}: invalid JSON, history ignored`);
+    return null;
+  }
+  const list = (parsed as { checkpoints?: unknown })?.checkpoints;
+  if (!Array.isArray(list)) {
+    warnings.push(`${where}: missing checkpoints array, history ignored`);
+    return null;
+  }
+  const out: RemoteCheckpoint[] = [];
+  for (const e of list) {
+    const entry = e as Record<string, unknown>;
+    const seq = entry?.seq;
+    const created = asStringOrNull(entry?.created_at);
+    const content = asStringOrNull(entry?.content);
+    if (
+      typeof seq !== "number" ||
+      !Number.isInteger(seq) ||
+      seq <= 0 ||
+      created == null ||
+      content == null
+    ) {
+      warnings.push(`${where}: malformed checkpoint entry skipped`);
+      continue;
+    }
+    out.push({
+      seq,
+      note: asStringOrNull(entry?.note),
+      created_at: created,
+      content,
+    });
+  }
+  return out;
+}
+
 // ───── Reconciliation: RemoteVault → SQLite ─────
 
 export interface DeletionCandidate {
@@ -282,6 +356,7 @@ export interface PullSummary {
   updatedAssets: number;
   skippedAssetsLocalNewer: string[];
   relinkedCount: number; // newly restored version↔asset links
+  restoredCheckpoints: number; // history entries imported from remote
   deletionCandidates: DeletionCandidate[];
   warnings: string[];
 }
@@ -318,6 +393,7 @@ export async function importRemoteVault(files: RepoFile[]): Promise<PullSummary>
     updatedAssets: 0,
     skippedAssetsLocalNewer: [],
     relinkedCount: 0,
+    restoredCheckpoints: 0,
     deletionCandidates: [],
     warnings,
   };
@@ -345,6 +421,7 @@ export async function importRemoteVault(files: RepoFile[]): Promise<PullSummary>
           if (vid != null) {
             matchedVerIds.add(vid);
             if (rv.assetNames) assetNamesByVid.set(vid, rv.assetNames);
+            await reconcileCheckpoints(vid, rv, summary);
           }
         } catch (e) {
           summary.warnings.push(
@@ -611,6 +688,55 @@ async function reconcileVersion(
     summary.skippedLocalNewer.push(label);
   }
   return local.id;
+}
+
+// Additive-only history merge: never deletes or renumbers local checkpoints.
+// A checkpoint deleted remotely survives locally and will be pushed back —
+// resurrection is the chosen failure direction for safety-net data (§4.2).
+async function reconcileCheckpoints(
+  vid: number,
+  rv: RemoteVersion,
+  summary: PullSummary,
+): Promise<void> {
+  if (!rv.checkpoints || rv.checkpoints.length === 0) return;
+  const db = await getDb();
+  const local = await db.select<
+    { seq: number; content: string; created_at: string }[]
+  >(
+    "SELECT seq, content, created_at FROM resume_checkpoints WHERE version_id = $1",
+    [vid],
+  );
+  const key = (c: { created_at: string; content: string }) =>
+    `${c.created_at} ${c.content}`;
+  const seen = new Set(local.map(key));
+
+  const fresh = [...rv.checkpoints]
+    .sort((a, b) =>
+      a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.seq - b.seq,
+    )
+    .filter((c) => {
+      if (seen.has(key(c))) return false;
+      seen.add(key(c)); // also dedups repeats within the remote file
+      return true;
+    });
+  if (fresh.length === 0) return;
+
+  // Empty local history (fresh restore) keeps the original vN numbering;
+  // cross-machine merges append after the local maximum instead.
+  const usedSeqs = new Set(local.map((c) => c.seq));
+  const useOriginalSeq = local.length === 0;
+  let next = local.reduce((m, c) => Math.max(m, c.seq), 0) + 1;
+  for (const c of fresh) {
+    let seq = useOriginalSeq && !usedSeqs.has(c.seq) ? c.seq : next;
+    while (usedSeqs.has(seq)) seq++;
+    usedSeqs.add(seq);
+    next = Math.max(next, seq + 1);
+    await db.execute(
+      "INSERT INTO resume_checkpoints (version_id, seq, content, note, created_at) VALUES ($1, $2, $3, $4, $5)",
+      [vid, seq, c.content, c.note, c.created_at],
+    );
+    summary.restoredCheckpoints++;
+  }
 }
 
 function collectDeletionCandidates(

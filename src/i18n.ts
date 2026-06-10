@@ -140,6 +140,8 @@ type DictShape = {
   sync_asset_rename: string;
   sync_asset_delete: string;
   sync_attachments_update: (versionName: string) => string;
+  github_pull_checkpoints_line: (n: number) => string;
+  sync_checkpoint_delete: (seq: number, versionName: string) => string;
   select: string;
   select_all: string;
   deselect_all: string;
@@ -308,6 +310,10 @@ const DICT: Record<Lang, DictShape> = {
     sync_asset_delete: "Delete asset",
     sync_attachments_update: (versionName: string) =>
       `Attachments of ${versionName}`,
+    github_pull_checkpoints_line: (n: number) =>
+      `Restored ${n} checkpoint${n === 1 ? "" : "s"}`,
+    sync_checkpoint_delete: (seq: number, versionName: string) =>
+      `Delete v${seq} of ${versionName}`,
     select: "Select",
     select_all: "Select All",
     deselect_all: "Deselect All",
@@ -460,6 +466,9 @@ const DICT: Record<Lang, DictShape> = {
     sync_asset_rename: "重命名附件",
     sync_asset_delete: "删除附件",
     sync_attachments_update: (versionName: string) => `${versionName} 的附件`,
+    github_pull_checkpoints_line: (n: number) => `恢复 checkpoint：${n} 条`,
+    sync_checkpoint_delete: (seq: number, versionName: string) =>
+      `删除 ${versionName} 的 v${seq}`,
     select: "选择",
     select_all: "全选",
     deselect_all: "全不选",
