@@ -142,6 +142,35 @@ type DictShape = {
   sync_attachments_update: (versionName: string) => string;
   github_pull_checkpoints_line: (n: number) => string;
   sync_checkpoint_delete: (seq: number, versionName: string) => string;
+  ai_assistant: string;
+  ai_provider: string;
+  ai_api_key: string;
+  ai_base_url: string;
+  ai_model: string;
+  ai_preset_custom: string;
+  ai_preset_claude_code: string;
+  ai_test_connection: string;
+  ai_testing: string;
+  ai_test_ok: string;
+  ai_test_failed: string;
+  ai_privacy_hint: string;
+  ai_cli_found: (v: string) => string;
+  ai_cli_missing: string;
+  ai_button: string;
+  ai_generating: string;
+  ai_apply: string;
+  ai_reject: string;
+  ai_retry: string;
+  ai_suggestion_label: string;
+  ai_not_configured: string;
+  ai_open_settings: string;
+  ai_err_auth: string;
+  ai_err_rate: string;
+  ai_err_network: string;
+  ai_err_no_cli: string;
+  ai_err_empty: string;
+  ai_err_stale: string;
+  ai_err_too_long: string;
   select: string;
   select_all: string;
   deselect_all: string;
@@ -314,6 +343,36 @@ const DICT: Record<Lang, DictShape> = {
       `Restored ${n} checkpoint${n === 1 ? "" : "s"}`,
     sync_checkpoint_delete: (seq: number, versionName: string) =>
       `Delete v${seq} of ${versionName}`,
+    ai_assistant: "AI Assistant",
+    ai_provider: "Provider",
+    ai_api_key: "API Key",
+    ai_base_url: "Base URL",
+    ai_model: "Model",
+    ai_preset_custom: "Custom",
+    ai_preset_claude_code: "Claude Code (local)",
+    ai_test_connection: "Test connection",
+    ai_testing: "Testing…",
+    ai_test_ok: "Connection OK",
+    ai_test_failed: "Connection failed",
+    ai_privacy_hint:
+      "When rewriting, the selected text (and the category's job description) is sent to the chosen AI provider. The local Claude Code mode also hands the text to its vendor.",
+    ai_cli_found: (v: string) => `✓ Claude Code detected: ${v}`,
+    ai_cli_missing: "✗ Claude Code not found — install it first",
+    ai_button: "Rewrite with AI",
+    ai_generating: "Rewriting…",
+    ai_apply: "Apply",
+    ai_reject: "Reject",
+    ai_retry: "Try another",
+    ai_suggestion_label: "AI suggestion",
+    ai_not_configured: "No AI provider configured.",
+    ai_open_settings: "Open Settings",
+    ai_err_auth: "API key invalid or unauthorized — check it in Settings.",
+    ai_err_rate: "Too many requests — try again in a moment.",
+    ai_err_network: "Network error or timeout.",
+    ai_err_no_cli: "Claude Code CLI not found.",
+    ai_err_empty: "The model returned an empty result.",
+    ai_err_stale: "The selected text changed — rewrite not applied.",
+    ai_err_too_long: "Selection is too long (max 12,000 characters).",
     select: "Select",
     select_all: "Select All",
     deselect_all: "Deselect All",
@@ -469,6 +528,36 @@ const DICT: Record<Lang, DictShape> = {
     github_pull_checkpoints_line: (n: number) => `恢复 checkpoint：${n} 条`,
     sync_checkpoint_delete: (seq: number, versionName: string) =>
       `删除 ${versionName} 的 v${seq}`,
+    ai_assistant: "AI 助手",
+    ai_provider: "提供商",
+    ai_api_key: "API Key",
+    ai_base_url: "Base URL",
+    ai_model: "模型",
+    ai_preset_custom: "自定义",
+    ai_preset_claude_code: "Claude Code（本地）",
+    ai_test_connection: "测试连接",
+    ai_testing: "测试中…",
+    ai_test_ok: "连接成功",
+    ai_test_failed: "连接失败",
+    ai_privacy_hint:
+      "改写时所选文本（及分类的岗位描述）将发送给所选 AI 提供商；Claude Code 本地模式同样会将文本交给其供应商处理。",
+    ai_cli_found: (v: string) => `✓ 已检测到 Claude Code：${v}`,
+    ai_cli_missing: "✗ 未检测到 Claude Code，请先安装",
+    ai_button: "AI 改写",
+    ai_generating: "改写中…",
+    ai_apply: "接受",
+    ai_reject: "拒绝",
+    ai_retry: "换个写法",
+    ai_suggestion_label: "AI 建议",
+    ai_not_configured: "尚未配置 AI 提供商。",
+    ai_open_settings: "打开设置",
+    ai_err_auth: "API Key 无效或无权限，请到设置中检查。",
+    ai_err_rate: "请求过于频繁，稍后再试。",
+    ai_err_network: "网络错误或超时。",
+    ai_err_no_cli: "未找到 Claude Code CLI。",
+    ai_err_empty: "模型返回了空结果。",
+    ai_err_stale: "所选文本已被修改，未应用改写。",
+    ai_err_too_long: "选中内容过长（上限 12,000 字符）。",
     select: "选择",
     select_all: "全选",
     deselect_all: "全不选",

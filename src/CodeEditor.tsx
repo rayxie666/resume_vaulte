@@ -24,6 +24,7 @@ import {
 import { tags as t } from "@lezer/highlight";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
 import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
+import type { Extension } from "@codemirror/state";
 
 // Brand syntax theme — colors resolve from the App.css tokens, so the
 // editor follows the light/dark theme without swapping extensions.
@@ -43,10 +44,12 @@ export default function CodeEditor({
   value,
   onChange,
   placeholder,
+  extraExtensions,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  extraExtensions?: Extension[];
 }) {
   const [dark, setDark] = useState(prefersDark);
 
@@ -80,8 +83,9 @@ export default function CodeEditor({
         indentWithTab,
       ]),
       EditorView.lineWrapping,
+      ...(extraExtensions ?? []),
     ],
-    [dark],
+    [dark, extraExtensions],
   );
 
   return (

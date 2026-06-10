@@ -1,3 +1,4 @@
+mod ai;
 mod git;
 mod latex;
 mod resume_cls;
@@ -184,7 +185,11 @@ ALTER TABLE resume_versions ADD COLUMN git_key TEXT;
             git::git_status,
             git::git_apply,
             git::git_pull,
-            git::git_remote_snapshot
+            git::git_remote_snapshot,
+            ai::ai_complete,
+            ai::claude_code_check,
+            ai::claude_code_run,
+            ai::claude_code_cancel
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

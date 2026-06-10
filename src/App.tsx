@@ -71,6 +71,21 @@ import {
   type PullSummary,
 } from "./githubPull";
 import { useSync } from "./SyncStatus";
+import {
+  AI_PRESETS,
+  aiCancel,
+  aiRewrite,
+  claudeCodeCheck,
+  isAiConfigured,
+  loadAiConfig,
+  saveAiConfig,
+  testAiConnection,
+  AiError,
+  type AiConfig,
+  type AiErrorCode,
+  type AiPreset,
+} from "./ai";
+import { aiInline } from "./aiInline";
 import { EMOJI_PICKS, GRADIENTS, gradientFor, initials } from "./iconUtils";
 import { useDialogs } from "./Dialogs";
 import { useLocale, useT, type LangPref } from "./i18n";
@@ -170,6 +185,10 @@ export default function App() {
     const vs = await listVersions(catId);
     setVersions(vs);
   }, []);
+
+  // Stable identity: this reaches the CodeMirror AI extension, which must not
+  // rebuild (and drop its rewrite session) on unrelated App re-renders.
+  const openSettings = useCallback(() => setShowSettings(true), []);
 
   // Pull import rewrites the DB outside normal UI flows — refresh every view.
   const handleVaultChanged = useCallback(async () => {
@@ -471,6 +490,7 @@ export default function App() {
           <VersionDetail
             version={activeVersion}
             onSaved={() => view.kind === "version" && refreshVersions(view.categoryId)}
+            onOpenSettings={openSettings}
           />
         )}
         {view.kind === "assets" && <AssetsPanel />}
@@ -948,14 +968,20 @@ function VersionCard({
 function VersionDetail({
   version,
   onSaved,
+  onOpenSettings,
 }: {
   version: ResumeVersion;
   onSaved: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <div className="version-detail">
       {version.kind === "latex" ? (
-        <LatexEditor version={version} onSaved={onSaved} />
+        <LatexEditor
+          version={version}
+          onSaved={onSaved}
+          onOpenSettings={onOpenSettings}
+        />
       ) : version.kind === "pdf" ? (
         <PdfViewer version={version} />
       ) : (
@@ -1175,12 +1201,176 @@ function SettingsModal({
 
         <GitHubSection onVaultChanged={onVaultChanged} />
 
+        <AiSection />
+
         <div className="modal-actions">
           <button className="primary" onClick={onClose}>
             {t("ok")}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const AI_PRESET_ORDER: AiPreset[] = [
+  "claude",
+  "openai",
+  "deepseek",
+  "kimi",
+  "custom",
+  "claude-code",
+];
+
+function AiSection() {
+  const t = useT();
+  const [cfg, setCfg] = useState<AiConfig>(() => loadAiConfig());
+  const [cli, setCli] = useState<{ found: boolean; version: string | null } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testErr, setTestErr] = useState<string | null>(null);
+
+  const presetLabel = (p: AiPreset): string => {
+    switch (p) {
+      case "claude": return "Claude (API)";
+      case "openai": return "ChatGPT";
+      case "deepseek": return "DeepSeek";
+      case "kimi": return "Kimi";
+      case "custom": return t("ai_preset_custom");
+      case "claude-code": return t("ai_preset_claude_code");
+    }
+  };
+
+  useEffect(() => {
+    if (cfg.kind !== "claude-code") return;
+    claudeCodeCheck().then(setCli).catch(console.error);
+  }, [cfg.kind]);
+
+  function update(patch: Partial<AiConfig>) {
+    setCfg((c) => {
+      const next = { ...c, ...patch };
+      saveAiConfig(next);
+      return next;
+    });
+    setTestMsg(null);
+    setTestErr(null);
+  }
+
+  function handlePresetChange(p: AiPreset) {
+    const def = AI_PRESETS[p];
+    update({ preset: p, kind: def.kind, baseUrl: def.baseUrl, model: def.model });
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestMsg(null);
+    setTestErr(null);
+    try {
+      await testAiConnection();
+      setTestMsg(t("ai_test_ok"));
+    } catch (e) {
+      const log = e instanceof AiError ? (e.log ?? e.code) : String(e);
+      setTestErr(log.slice(0, 1500));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const isApi = cfg.kind !== "claude-code";
+
+  return (
+    <div className="gh-section">
+      <div className="gh-title">{t("ai_assistant")}</div>
+
+      <label className="field">
+        <span>{t("ai_provider")}</span>
+        <select
+          value={cfg.preset}
+          onChange={(e) => handlePresetChange(e.target.value as AiPreset)}
+        >
+          {AI_PRESET_ORDER.map((p) => (
+            <option key={p} value={p}>
+              {presetLabel(p)}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {isApi ? (
+        <>
+          <label className="field">
+            <span>{t("ai_api_key")}</span>
+            <input
+              type="password"
+              value={cfg.apiKey}
+              placeholder="sk-…"
+              onChange={(e) => update({ apiKey: e.target.value.trim() })}
+            />
+          </label>
+          <label className="field">
+            <span>{t("ai_base_url")}</span>
+            <input
+              value={cfg.baseUrl}
+              placeholder="https://…"
+              onChange={(e) => update({ baseUrl: e.target.value.trim() })}
+            />
+          </label>
+          <label className="field">
+            <span>{t("ai_model")}</span>
+            <input
+              value={cfg.model}
+              placeholder={AI_PRESETS[cfg.preset].modelPlaceholder ?? "model"}
+              onChange={(e) => update({ model: e.target.value.trim() })}
+            />
+          </label>
+        </>
+      ) : (
+        <>
+          <div className="gh-status">
+            {cli == null ? (
+              "…"
+            ) : cli.found ? (
+              <span>{t("ai_cli_found")(cli.version ?? "")}</span>
+            ) : (
+              <span>
+                {t("ai_cli_missing")}{" "}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() =>
+                    openUrl("https://claude.com/claude-code").catch(console.error)
+                  }
+                >
+                  claude.com/claude-code ↗
+                </button>
+              </span>
+            )}
+          </div>
+          <label className="field">
+            <span>{t("ai_model")}</span>
+            <input
+              value={cfg.model}
+              placeholder="claude-sonnet-4-6 (optional)"
+              onChange={(e) => update({ model: e.target.value.trim() })}
+            />
+          </label>
+        </>
+      )}
+
+      <div className="gh-actions">
+        <button disabled={testing} onClick={handleTest}>
+          {testing ? t("ai_testing") : t("ai_test_connection")}
+        </button>
+      </div>
+
+      <p className="gh-help">{t("ai_privacy_hint")}</p>
+      {testMsg && <div className="gh-msg ok">{testMsg}</div>}
+      {testErr && (
+        <details className="gh-msg err">
+          <summary>{t("ai_test_failed")}</summary>
+          <pre>{testErr}</pre>
+        </details>
+      )}
     </div>
   );
 }
@@ -1578,15 +1768,66 @@ function PullSummaryModal({
 function LatexEditor({
   version,
   onSaved,
+  onOpenSettings,
 }: {
   version: ResumeVersion;
   onSaved: () => void;
+  onOpenSettings: () => void;
 }) {
   const t = useT();
   const dlg = useDialogs();
   const sync = useSync();
   const [code, setCode] = useState(version.content ?? "");
   const [dirty, setDirty] = useState(false);
+
+  // JD context for AI rewrites (R3) — a ref so the editor extension doesn't
+  // rebuild (and drop its session state) when the category loads.
+  const jdRef = useRef<string | null>(null);
+  useEffect(() => {
+    jdRef.current = null;
+    getCategory(version.category_id)
+      .then((c) => {
+        jdRef.current = c?.jd_text ?? null;
+      })
+      .catch(console.error);
+  }, [version.category_id]);
+
+  const aiExtensions = useMemo(
+    () => [
+      aiInline({
+        isConfigured: isAiConfigured,
+        rewrite: (text, prev) => aiRewrite(text, jdRef.current, prev),
+        cancel: () => {
+          void aiCancel();
+        },
+        openSettings: onOpenSettings,
+        onApplied: () => setDirty(true),
+        labels: {
+          button: t("ai_button"),
+          generating: t("ai_generating"),
+          apply: t("ai_apply"),
+          reject: t("ai_reject"),
+          retry: t("ai_retry"),
+          suggestionLabel: t("ai_suggestion_label"),
+          notConfigured: t("ai_not_configured"),
+          openSettings: t("ai_open_settings"),
+          error: (code: AiErrorCode) => {
+            switch (code) {
+              case "auth": return t("ai_err_auth");
+              case "rate": return t("ai_err_rate");
+              case "no_cli": return t("ai_err_no_cli");
+              case "empty": return t("ai_err_empty");
+              case "stale": return t("ai_err_stale");
+              case "too_long": return t("ai_err_too_long");
+              case "not_configured": return t("ai_not_configured");
+              default: return t("ai_err_network");
+            }
+          },
+        },
+      }),
+    ],
+    [t, onOpenSettings],
+  );
   const [showHistory, setShowHistory] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [checkpointCount, setCheckpointCount] = useState(0);
@@ -1802,6 +2043,7 @@ function LatexEditor({
               setCode(v);
               setDirty(true);
             }}
+            extraExtensions={aiExtensions}
           />
         </div>
         <div
