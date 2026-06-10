@@ -81,8 +81,16 @@ New terminals get it automatically via your shell profile.
 [Building a release](#building-a-release-app--dmg) below; the binary is
 unsigned.
 
-**LaTeX preview shows nothing / compile errors about missing engine** —
-install Tectonic (`brew install tectonic`) and restart the app.
+**`tectonic not found. Install with: brew install tectonic`** (shown in the
+LaTeX preview pane) — the Tectonic engine isn't installed. Fix:
+
+```bash
+brew install tectonic
+```
+
+Then restart the app (a running instance won't pick up the new binary). The
+first compile is slow: Tectonic downloads LaTeX packages on demand and caches
+them under `~/Library/Caches/Tectonic`.
 
 ## Building a release `.app` / `.dmg`
 
