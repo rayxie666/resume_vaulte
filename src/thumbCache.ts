@@ -1,6 +1,12 @@
 const PREFIX = "rv.thumb.";
 const FAIL_MARKER = "__FAIL__";
 
+// Failures live only in memory: most are environmental (tectonic missing,
+// broken asset) and self-heal after a restart. Persisting them froze cards
+// on "Preview failed" forever, because the cache key (updated_at) never
+// changes when the environment gets fixed.
+const failedThisSession = new Set<string>();
+
 export type ThumbEntry =
   | { status: "hit"; dataUrl: string }
   | { status: "fail" }
@@ -11,10 +17,16 @@ function key(versionId: number, signature: string): string {
 }
 
 export function getThumbnail(versionId: number, signature: string): ThumbEntry {
+  const k = key(versionId, signature);
+  if (failedThisSession.has(k)) return { status: "fail" };
   try {
-    const v = localStorage.getItem(key(versionId, signature));
+    const v = localStorage.getItem(k);
     if (v === null) return { status: "miss" };
-    if (v === FAIL_MARKER) return { status: "fail" };
+    if (v === FAIL_MARKER) {
+      // Legacy persisted failure from older builds — drop it and retry.
+      localStorage.removeItem(k);
+      return { status: "miss" };
+    }
     return { status: "hit", dataUrl: v };
   } catch {
     return { status: "miss" };
@@ -25,6 +37,7 @@ export function setThumbnailFailure(
   versionId: number,
   signature: string,
 ): void {
+  failedThisSession.add(key(versionId, signature));
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
@@ -32,7 +45,6 @@ export function setThumbnailFailure(
         localStorage.removeItem(k);
       }
     }
-    localStorage.setItem(key(versionId, signature), FAIL_MARKER);
   } catch {
     // ignore
   }
@@ -43,6 +55,9 @@ export function setThumbnail(
   signature: string,
   dataUrl: string,
 ): void {
+  for (const k of failedThisSession) {
+    if (k.startsWith(`${PREFIX}${versionId}.`)) failedThisSession.delete(k);
+  }
   try {
     // sweep any previous signatures for this version
     for (let i = localStorage.length - 1; i >= 0; i--) {
