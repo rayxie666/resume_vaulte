@@ -983,6 +983,83 @@ html, body, #root {
   background: #525659;
 }
 
+/* ───── PDF.js canvas viewer (pinch-zoom support) ───── */
+.pdf-canvas-root {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #525659;
+  overflow: hidden;
+  touch-action: none; /* let our wheel handler own pinch gestures */
+}
+.zoom-toolbar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(28, 28, 30, 0.85);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.pdf-canvas-root:hover .zoom-toolbar { opacity: 1; }
+.zoom-btn {
+  width: 28px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.zoom-btn:hover { background: rgba(255, 255, 255, 0.15); }
+.zoom-readout {
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.pdf-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.pdf-page-wrap {
+  display: inline-block;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  /* size collapses around the CSS-transformed canvas via overflow */
+  overflow: hidden;
+}
+.pdf-page-canvas {
+  display: block;
+  /* width/height come from canvas attrs (pixel size); CSS transform scales */
+}
+.pdf-error {
+  color: #ff8675;
+  padding: 16px;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+
 /* tsx split: code | divider | preview */
 .tsx-split {
   flex: 1;

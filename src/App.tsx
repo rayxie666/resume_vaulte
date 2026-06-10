@@ -37,6 +37,7 @@ import {
 import HistoryPanel from "./HistoryPanel";
 import AttachmentsModal from "./AttachmentsModal";
 import AssetsPanel from "./AssetsPanel";
+import PdfCanvas from "./PdfCanvas";
 import { findReferencedAssets } from "./assetScan";
 import { useThumbnail } from "./useThumbnail";
 import {
@@ -1536,7 +1537,7 @@ function LatexPreview({
   assets: CompileAsset[];
 }) {
   const t = useT();
-  const [url, setUrl] = useState<string | null>(null);
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1551,14 +1552,7 @@ function LatexPreview({
         const r = await compileLatex(source, assets);
         if (cancelled) return;
         if (r.success && r.pdf) {
-          const blob = new Blob([new Uint8Array(r.pdf) as BlobPart], {
-            type: "application/pdf",
-          });
-          const next = URL.createObjectURL(blob);
-          setUrl((old) => {
-            if (old) URL.revokeObjectURL(old);
-            return next;
-          });
+          setPdfBytes(new Uint8Array(r.pdf));
           setError(null);
         } else {
           setError(r.log.trim() || t("compile_error"));
@@ -1603,8 +1597,8 @@ function LatexPreview({
             value={error}
           />
         </div>
-      ) : url ? (
-        <iframe className="pdf-frame" src={url} title="preview" />
+      ) : pdfBytes ? (
+        <PdfCanvas bytes={pdfBytes} />
       ) : (
         <div className="placeholder">{t("rendering")}</div>
       )}
@@ -1614,29 +1608,25 @@ function LatexPreview({
 
 function PdfViewer({ version }: { version: ResumeVersion }) {
   const t = useT();
-  const [url, setUrl] = useState<string | null>(null);
+  const [bytes, setBytes] = useState<Uint8Array | null>(null);
 
   useEffect(() => {
-    let revoke: string | null = null;
     let cancelled = false;
     (async () => {
       if (!version.file_path) return;
-      const bytes = await readVaultPdf(version.file_path);
+      const b = await readVaultPdf(version.file_path);
       if (cancelled) return;
-      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
-      revoke = URL.createObjectURL(blob);
-      setUrl(revoke);
+      setBytes(b);
     })().catch(console.error);
     return () => {
       cancelled = true;
-      if (revoke) URL.revokeObjectURL(revoke);
     };
   }, [version.id, version.file_path]);
 
   async function handleExport() {
     if (!version.file_path) return;
-    const bytes = await readVaultPdf(version.file_path);
-    await exportFileToDialog(bytes, `${version.name}.pdf`, "pdf");
+    const b = await readVaultPdf(version.file_path);
+    await exportFileToDialog(b, `${version.name}.pdf`, "pdf");
   }
 
   return (
@@ -1644,8 +1634,8 @@ function PdfViewer({ version }: { version: ResumeVersion }) {
       <div className="actions">
         <button onClick={handleExport}>{t("export_pdf")}</button>
       </div>
-      {url ? (
-        <iframe className="pdf-frame" src={url} title={version.name} />
+      {bytes ? (
+        <PdfCanvas bytes={bytes} />
       ) : (
         <div className="placeholder">{t("loading_pdf")}</div>
       )}
