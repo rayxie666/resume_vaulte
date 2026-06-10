@@ -40,7 +40,9 @@ import AssetsPanel from "./AssetsPanel";
 import CodeEditor from "./CodeEditor";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { findReferencedAssets } from "./assetScan";
-import { useThumbnail } from "./useThumbnail";
+import { useThumbnail, thumbSignature } from "./useThumbnail";
+import { renderPdfThumbnail } from "./thumbnail";
+import { setThumbnail } from "./thumbCache";
 import {
   gitConnect,
   gitDisconnect,
@@ -1813,6 +1815,48 @@ function LatexEditor({
   const [code, setCode] = useState(version.content ?? "");
   const [dirty, setDirty] = useState(false);
 
+  // Every successful preview render is "screenshotted" into the thumbnail
+  // cache, so cards never need their own tectonic run for versions you've
+  // actually looked at. The card-side compile pipeline remains the fallback
+  // for versions never opened in the editor.
+  const lastGoodPdfRef = useRef<{ source: string; pdf: Uint8Array } | null>(null);
+  const savedContentRef = useRef(version.content ?? "");
+  useEffect(() => {
+    savedContentRef.current = version.content ?? "";
+  }, [version.content]);
+
+  const handlePreviewRendered = useCallback(
+    (src: string, pdf: Uint8Array) => {
+      lastGoodPdfRef.current = { source: src, pdf };
+      // Rendered text matches the saved state → cache under the current key.
+      if (src === savedContentRef.current) {
+        renderPdfThumbnail(pdf, 240)
+          .then((dataUrl) =>
+            setThumbnail(version.id, thumbSignature(version.updated_at), dataUrl),
+          )
+          .catch(() => undefined);
+      }
+    },
+    [version.id, version.updated_at],
+  );
+
+  // After a save bumps updated_at, re-key the freshest preview render.
+  const captureThumbAfterSave = useCallback(
+    async (savedSource: string) => {
+      const last = lastGoodPdfRef.current;
+      if (!last || last.source !== savedSource) return; // preview lagging — fallback compiles
+      try {
+        const fresh = await getVersion(version.id);
+        if (!fresh) return;
+        const dataUrl = await renderPdfThumbnail(last.pdf, 240);
+        setThumbnail(version.id, thumbSignature(fresh.updated_at), dataUrl);
+      } catch {
+        // card pipeline remains the fallback
+      }
+    },
+    [version.id],
+  );
+
   // JD context for AI rewrites (R3) — a ref so the editor extension doesn't
   // rebuild (and drop its session state) when the category loads.
   const jdRef = useRef<string | null>(null);
@@ -1933,6 +1977,7 @@ function LatexEditor({
 
   async function handleSave() {
     await updateVersion(version.id, { content: code });
+    await captureThumbAfterSave(code);
     setDirty(false);
     onSaved();
   }
@@ -1964,6 +2009,7 @@ function LatexEditor({
     if (note == null) return;
     if (dirty) {
       await updateVersion(version.id, { content: code });
+      await captureThumbAfterSave(code);
       setDirty(false);
       onSaved();
     }
@@ -2084,7 +2130,11 @@ function LatexEditor({
           onPointerDown={handleDividerDown}
           onDoubleClick={handleDividerReset}
         />
-        <LatexPreview source={code} assets={compileAssets} />
+        <LatexPreview
+          source={code}
+          assets={compileAssets}
+          onRendered={handlePreviewRendered}
+        />
       </div>
       {showHistory && (
         <HistoryPanel
@@ -2110,9 +2160,11 @@ function LatexEditor({
 function LatexPreview({
   source,
   assets,
+  onRendered,
 }: {
   source: string;
   assets: CompileAsset[];
+  onRendered?: (source: string, pdf: Uint8Array) => void;
 }) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(null);
@@ -2131,7 +2183,9 @@ function LatexPreview({
         const r = await compileLatex(source, assets);
         if (cancelled) return;
         if (r.success && r.pdf) {
-          const blob = new Blob([new Uint8Array(r.pdf) as BlobPart], {
+          const bytes = new Uint8Array(r.pdf);
+          onRendered?.(source, bytes);
+          const blob = new Blob([bytes as BlobPart], {
             type: "application/pdf",
           });
           const next = URL.createObjectURL(blob);

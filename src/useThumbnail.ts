@@ -58,6 +58,12 @@ export type ThumbState = "loading" | "ready" | "failed" | "skipped";
 // Bump when the rendering pipeline changes so stale failure markers are invalidated.
 const THUMB_PIPELINE_VERSION = "v4";
 
+/** Cache signature for a version's thumbnail — shared with the editor, which
+ * stores a screenshot of every successful preview render under this key. */
+export function thumbSignature(updatedAt: string): string {
+  return `${THUMB_PIPELINE_VERSION}.${updatedAt}`;
+}
+
 // PDF: read straight from vault. LaTeX: compile on demand, throttled by the
 // queue below so a long version list doesn't fan out into many concurrent
 // tectonic processes. tsx is still skipped (no compile path).
@@ -68,7 +74,7 @@ export function useThumbnail(version: ResumeVersion): {
   state: ThumbState;
 } {
   const supported = SUPPORTED_KINDS.has(version.kind);
-  const signature = `${THUMB_PIPELINE_VERSION}.${version.updated_at}`;
+  const signature = thumbSignature(version.updated_at);
   const initial = (() => {
     if (!supported) return { url: null, state: "skipped" as const };
     const r = getThumbnail(version.id, signature);
