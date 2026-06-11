@@ -19,6 +19,7 @@
   --r-xl: 18px;
 
   /* z-index scale: nav < select-bar < backdrop < modal < toast */
+  --z-nebula: 1;
   --z-nav: 10;
   --z-bar: 30;
   --z-backdrop: 40;
@@ -287,6 +288,19 @@ button {
   min-height: 0;
   overflow: auto;
   padding: 24px;
+  /* Above the nebula canvas; transparent areas still show it through. */
+  position: relative;
+  z-index: 2;
+}
+
+/* ───── Ink-nebula background (spec/2026-06-10-nebula-background.md) ───── */
+.nebula {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-nebula);
+  pointer-events: none;
 }
 
 /* ───── Category grid ───── */
@@ -1333,6 +1347,7 @@ button {
   justify-content: center;
   color: var(--ink-2);
   font-size: 13px;
+  text-shadow: 0 1px 8px var(--bg);
   text-align: center;
   padding: 0 40px;
 }
@@ -2076,6 +2091,8 @@ button {
   justify-content: center;
   color: var(--ink-2);
   font-size: 13px;
+  /* Keeps empty-state copy readable over the nebula's brightest frame. */
+  text-shadow: 0 1px 8px var(--bg);
 }
 .preview .placeholder {
   color: oklch(0.7 0.01 80);

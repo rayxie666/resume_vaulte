@@ -76,6 +76,10 @@ import {
 } from "./githubPull";
 import { useSync } from "./SyncStatus";
 import { petEvents } from "./pet/petEvents";
+import NebulaCanvas, {
+  setNebulaEnabled,
+  useNebulaEnabled,
+} from "./NebulaCanvas";
 import {
   PetOverlay,
   isPetUnsupported,
@@ -468,8 +472,11 @@ export default function App() {
     }
   }
 
+  const nebulaOn = useNebulaEnabled();
+
   return (
     <div className="app">
+      {nebulaOn && view.kind !== "version" && <NebulaCanvas />}
       <NavBar
         view={view}
         navDir={navDir}
@@ -1346,6 +1353,8 @@ function SettingsModal({
           </div>
         </label>
 
+        <NebulaField />
+
         <GitHubSection onVaultChanged={onVaultChanged} />
 
         <AiSection />
@@ -1359,6 +1368,30 @@ function SettingsModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function NebulaField() {
+  const t = useT();
+  const on = useNebulaEnabled();
+  return (
+    <label className="field">
+      <span>{t("nebula_bg")}</span>
+      <div className="segmented">
+        <button
+          className={on ? "seg-active" : ""}
+          onClick={() => setNebulaEnabled(true)}
+        >
+          {t("nebula_on")}
+        </button>
+        <button
+          className={!on ? "seg-active" : ""}
+          onClick={() => setNebulaEnabled(false)}
+        >
+          {t("nebula_off")}
+        </button>
+      </div>
+    </label>
   );
 }
 

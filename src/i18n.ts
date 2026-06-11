@@ -189,6 +189,9 @@ type DictShape = {
   pet_unsupported: string;
   pet_bubble_meow: string;
   pet_bubble_saved: string;
+  nebula_bg: string;
+  nebula_on: string;
+  nebula_off: string;
 };
 
 const DICT: Record<Lang, DictShape> = {
@@ -401,6 +404,9 @@ const DICT: Record<Lang, DictShape> = {
     pet_unsupported: "3D rendering is not supported in this environment.",
     pet_bubble_meow: "mew?",
     pet_bubble_saved: "✓ Saved, meow",
+    nebula_bg: "Background nebula",
+    nebula_on: "On",
+    nebula_off: "Off",
   },
   zh: {
     app_title: "简历库",
@@ -593,6 +599,9 @@ const DICT: Record<Lang, DictShape> = {
     pet_unsupported: "当前环境不支持 3D 渲染。",
     pet_bubble_meow: "喵?",
     pet_bubble_saved: "✓ 已保存,喵",
+    nebula_bg: "背景星云",
+    nebula_on: "开",
+    nebula_off: "关",
   },
 };
 

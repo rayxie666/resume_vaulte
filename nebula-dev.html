@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Dev-only harness for the ink-nebula background (not part of the build).
+     http://localhost:1420/nebula-dev.html?theme=dark|light -->
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>nebula dev</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      body.dark { background: oklch(0.15 0.005 80); }
+      body.light { background: oklch(0.975 0.004 85); }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+    </style>
+    <script>
+      // Force the theme before the module reads matchMedia.
+      const dark = !new URLSearchParams(location.search).get("theme")?.includes("light");
+      document.addEventListener("DOMContentLoaded", () => {
+        document.body.className = dark ? "dark" : "light";
+      });
+      const orig = window.matchMedia.bind(window);
+      window.matchMedia = (q) => {
+        if (q.includes("prefers-color-scheme")) {
+          return {
+            matches: q.includes("dark") ? dark : !dark,
+            media: q,
+            addEventListener() {},
+            removeEventListener() {},
+          };
+        }
+        return orig(q);
+      };
+    </script>
+  </head>
+  <body>
+    <canvas id="n"></canvas>
+    <script type="module">
+      import { createNebula } from "/src/nebula.ts";
+      createNebula(document.getElementById("n"));
+    </script>
+  </body>
+</html>
