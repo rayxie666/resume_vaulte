@@ -23,6 +23,7 @@
   --z-bar: 30;
   --z-backdrop: 40;
   --z-modal: 50;
+  --z-pet: 55; /* above modals, below toasts */
   --z-toast: 60;
 
   /* motion */
@@ -2603,4 +2604,78 @@ button {
 }
 .preview-divider:hover::after {
   opacity: 0.7;
+}
+
+/* ───── Pet cat (spec/2026-06-10-pet-cat-3d.md) ───── */
+.pet-overlay {
+  position: fixed;
+  width: 200px;
+  height: 240px;
+  z-index: var(--z-pet);
+  pointer-events: none; /* only the hit area is interactive */
+  transition: transform var(--t-med) var(--ease-out);
+}
+.pet-br { right: 8px; bottom: 0; }
+.pet-bl { left: 8px; bottom: 0; }
+.pet-tr { right: 8px; top: 48px; }
+.pet-tl { left: 8px; top: 48px; }
+/* Yield the corner to the select bar / sync badge. */
+.pet-br.pet-lifted,
+.pet-bl.pet-lifted {
+  transform: translateY(-56px);
+}
+.pet-carrying {
+  transition: none;
+  opacity: 0.92;
+}
+
+.pet-canvas {
+  display: block;
+  width: 200px;
+  height: 240px;
+  pointer-events: none;
+}
+
+.pet-hit {
+  position: absolute;
+  left: 38px;
+  top: 92px;
+  width: 124px;
+  height: 142px;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.pet-carrying .pet-hit {
+  cursor: grabbing;
+}
+
+.pet-bubble {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: var(--surface);
+  border: 1px solid var(--brand-edge);
+  border-radius: 999px;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  animation: pet-bubble-in var(--t-med) var(--ease-out) backwards;
+}
+@keyframes pet-bubble-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 5px);
+  }
+}
+
+.pet-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
 }

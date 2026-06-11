@@ -22,12 +22,14 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-sql": "^2.4.0",
+    "@types/three": "^0.184.1",
     "@uiw/react-codemirror": "^4.25.10",
     "codemirror": "^6.0.2",
     "diff": "^9.0.0",
     "pdfjs-dist": "^6.0.227",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

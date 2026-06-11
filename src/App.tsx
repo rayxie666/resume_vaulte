@@ -75,6 +75,13 @@ import {
   type PullSummary,
 } from "./githubPull";
 import { useSync } from "./SyncStatus";
+import { petEvents } from "./pet/petEvents";
+import {
+  PetOverlay,
+  isPetUnsupported,
+  setPetConfig,
+  usePetConfig,
+} from "./pet/PetOverlay";
 import {
   AI_PRESETS,
   aiCancel,
@@ -577,6 +584,8 @@ export default function App() {
           onDone={exitSelect}
         />
       )}
+
+      <PetOverlay />
     </div>
   );
 }
@@ -1341,12 +1350,47 @@ function SettingsModal({
 
         <AiSection />
 
+        <PetSection />
+
         <div className="modal-actions">
           <button className="primary" onClick={close}>
             {t("ok")}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PetSection() {
+  const t = useT();
+  const cfg = usePetConfig();
+  const toggle = (
+    label: string,
+    value: boolean,
+    set: (v: boolean) => void,
+  ) => (
+    <label className="field">
+      <span>{label}</span>
+      <div className="segmented">
+        <button className={value ? "seg-active" : ""} onClick={() => set(true)}>
+          {t("pet_on")}
+        </button>
+        <button className={!value ? "seg-active" : ""} onClick={() => set(false)}>
+          {t("pet_off")}
+        </button>
+      </div>
+    </label>
+  );
+  return (
+    <div className="gh-section">
+      <div className="gh-title">{t("pet_section")}</div>
+      {toggle(t("pet_show"), cfg.enabled, (v) => setPetConfig({ enabled: v }))}
+      {cfg.enabled &&
+        toggle(t("pet_sound"), cfg.sound, (v) => setPetConfig({ sound: v }))}
+      {isPetUnsupported() && (
+        <div className="pet-note">{t("pet_unsupported")}</div>
+      )}
     </div>
   );
 }
@@ -2092,6 +2136,7 @@ function LatexEditor({
     await captureThumbAfterSave(code);
     setDirty(false);
     onSaved();
+    petEvents.emit("saved");
   }
 
   async function handleExportTex() {
@@ -2127,6 +2172,7 @@ function LatexEditor({
     }
     const cpId = await createCheckpoint(version.id, code, note);
     await refreshCheckpointCount();
+    petEvents.emit("checkpoint");
 
     // Auto-push to GitHub if connected.
     if (isGitConnected()) {
@@ -2140,6 +2186,7 @@ function LatexEditor({
         void sync.run(`v${seq} ${freshVersion.name}`, async () => {
           const r = await pushCheckpoint(cat, freshVersion, note, seq);
           if (!r.success) throwGitError(r);
+          petEvents.emit("pushed");
         });
       }
     }
@@ -2158,6 +2205,7 @@ function LatexEditor({
     setCode(content);
     setDirty(true);
     setRestoreFlash(true);
+    petEvents.emit("restored");
   }
 
   // Resizable editor/preview split — fraction of width given to the editor.
@@ -2239,6 +2287,7 @@ function LatexEditor({
             onChange={(v) => {
               setCode(v);
               setDirty(true);
+              petEvents.emitThrottled("typing", 1000);
             }}
             extraExtensions={aiExtensions}
           />
@@ -2307,6 +2356,7 @@ function LatexPreview({
         if (r.success && r.pdf) {
           const bytes = new Uint8Array(r.pdf);
           onRendered?.(source, bytes);
+          petEvents.emit("compiled");
           const blob = new Blob([bytes as BlobPart], {
             type: "application/pdf",
           });
@@ -2321,10 +2371,12 @@ function LatexPreview({
           setError(null);
         } else {
           setError(r.log.trim() || t("compile_error"));
+          petEvents.emit("compile-error");
         }
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
+        petEvents.emit("compile-error");
       } finally {
         if (!cancelled) setBusy(false);
       }

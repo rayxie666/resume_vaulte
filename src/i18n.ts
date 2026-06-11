@@ -181,6 +181,14 @@ type DictShape = {
   delete_n_categories_msg: (n: number) => string;
   delete_n_versions_title: string;
   delete_n_versions_msg: (n: number) => string;
+  pet_section: string;
+  pet_show: string;
+  pet_sound: string;
+  pet_on: string;
+  pet_off: string;
+  pet_unsupported: string;
+  pet_bubble_meow: string;
+  pet_bubble_saved: string;
 };
 
 const DICT: Record<Lang, DictShape> = {
@@ -385,6 +393,14 @@ const DICT: Record<Lang, DictShape> = {
     delete_n_versions_title: "Delete versions?",
     delete_n_versions_msg: (n: number) =>
       `${n} version${n === 1 ? "" : "s"} will be deleted permanently.`,
+    pet_section: "Pet cat",
+    pet_show: "Show the cat",
+    pet_sound: "Purr sound",
+    pet_on: "On",
+    pet_off: "Off",
+    pet_unsupported: "3D rendering is not supported in this environment.",
+    pet_bubble_meow: "mew?",
+    pet_bubble_saved: "✓ Saved, meow",
   },
   zh: {
     app_title: "简历库",
@@ -569,6 +585,14 @@ const DICT: Record<Lang, DictShape> = {
       `${n} 个分类及其所有版本将被永久删除。`,
     delete_n_versions_title: "删除选中版本？",
     delete_n_versions_msg: (n: number) => `${n} 个版本将被永久删除。`,
+    pet_section: "宠物猫",
+    pet_show: "显示宠物猫",
+    pet_sound: "呼噜声",
+    pet_on: "开",
+    pet_off: "关",
+    pet_unsupported: "当前环境不支持 3D 渲染。",
+    pet_bubble_meow: "喵?",
+    pet_bubble_saved: "✓ 已保存,喵",
   },
 };
 
