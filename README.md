@@ -297,6 +297,18 @@ Then restart the app (a running instance won't pick up the new binary). The
 first compile is slow: Tectonic downloads LaTeX packages on demand and caches
 them under `~/Library/Caches/Tectonic`.
 
+**`[plugin:vite:import-analysis] Failed to resolve import "three" from "src/pet/catScene.ts"`**
+— the 3D pet companion depends on `three` (declared in `package.json`) but
+`node_modules/three` is missing. Happens after pulling a commit that added the
+dep without re-running install. Fix:
+
+```bash
+npm install
+```
+
+Then restart `npm run tauri dev`. Same recipe for any other "Failed to resolve
+import" pointing at a dep that already lives in `package.json`.
+
 ## Architecture
 
 For contributors — how the codebase is laid out and why.
