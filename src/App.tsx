@@ -206,6 +206,55 @@ export default function App() {
     setSelectedIds(new Set());
   }, []);
 
+  // The editor (LatexEditor) registers a closer here while a History /
+  // Attachments overlay is open, so global Back / Esc can dismiss the overlay
+  // first instead of navigating the whole view. null = no overlay open.
+  const editorOverlayCloser = useRef<(() => void) | null>(null);
+  const registerEditorOverlay = useCallback(
+    (closer: (() => void) | null) => {
+      editorOverlayCloser.current = closer;
+    },
+    [],
+  );
+
+  // Hierarchical dismissal: close the top-most open layer (select mode, then
+  // an editor overlay). Returns true if it consumed the gesture.
+  const closeTopOverlay = useCallback((): boolean => {
+    if (selectMode !== null) {
+      exitSelect();
+      return true;
+    }
+    if (editorOverlayCloser.current) {
+      editorOverlayCloser.current();
+      return true;
+    }
+    return false;
+  }, [selectMode, exitSelect]);
+
+  // Back: peel off an overlay first; only navigate the view if none is open.
+  const requestBack = useCallback(() => {
+    if (closeTopOverlay()) return;
+    const v = viewRef.current;
+    if (v.kind === "version") {
+      setView({ kind: "category", categoryId: v.categoryId });
+    } else if (v.kind === "category" || v.kind === "assets") {
+      setView({ kind: "home" });
+    }
+  }, [closeTopOverlay, setView]);
+
+  // Global Esc closes the top-most overlay. Dialogs (prompt/confirm) own their
+  // own Esc and are the top layer, so defer while one is open. Esc never does
+  // view-level navigation — that would yank the user out of an editing session.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector(".dialog-backdrop")) return;
+      if (closeTopOverlay()) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closeTopOverlay]);
+
   const toggleSelected = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -483,13 +532,7 @@ export default function App() {
         category={activeCategory}
         version={activeVersion}
         selectMode={selectMode}
-        onBack={() => {
-          if (view.kind === "version") {
-            setView({ kind: "category", categoryId: view.categoryId });
-          } else if (view.kind === "category" || view.kind === "assets") {
-            setView({ kind: "home" });
-          }
-        }}
+        onBack={requestBack}
         onEditCategory={() => activeCategory && setEditingCategory(activeCategory)}
         onEditVersion={() => activeVersion && setEditingVersion(activeVersion)}
         onOpenSettings={() => setShowSettings(true)}
@@ -536,6 +579,7 @@ export default function App() {
             version={activeVersion}
             onSaved={() => view.kind === "version" && refreshVersions(view.categoryId)}
             onOpenSettings={openSettings}
+            onOverlayChange={registerEditorOverlay}
           />
         )}
         {view.kind === "assets" && <AssetsPanel />}
@@ -1077,10 +1121,12 @@ function VersionDetail({
   version,
   onSaved,
   onOpenSettings,
+  onOverlayChange,
 }: {
   version: ResumeVersion;
   onSaved: () => void;
   onOpenSettings: () => void;
+  onOverlayChange: (closer: (() => void) | null) => void;
 }) {
   return (
     <div className="version-detail">
@@ -1089,6 +1135,7 @@ function VersionDetail({
           version={version}
           onSaved={onSaved}
           onOpenSettings={onOpenSettings}
+          onOverlayChange={onOverlayChange}
         />
       ) : version.kind === "pdf" ? (
         <PdfViewer version={version} />
@@ -1993,10 +2040,12 @@ function LatexEditor({
   version,
   onSaved,
   onOpenSettings,
+  onOverlayChange,
 }: {
   version: ResumeVersion;
   onSaved: () => void;
   onOpenSettings: () => void;
+  onOverlayChange: (closer: (() => void) | null) => void;
 }) {
   const t = useT();
   const dlg = useDialogs();
@@ -2096,6 +2145,18 @@ function LatexEditor({
   );
   const [showHistory, setShowHistory] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
+
+  // Register the open overlay's closer with App so global Back / Esc dismisses
+  // it before navigating the view (only one editor overlay is open at a time).
+  useEffect(() => {
+    const closer = showHistory
+      ? () => setShowHistory(false)
+      : showAttachments
+        ? () => setShowAttachments(false)
+        : null;
+    onOverlayChange(closer);
+    return () => onOverlayChange(null);
+  }, [showHistory, showAttachments, onOverlayChange]);
   const [checkpointCount, setCheckpointCount] = useState(0);
   const [assetCount, setAssetCount] = useState(0);
   const [compileAssets, setCompileAssets] = useState<CompileAsset[]>([]);

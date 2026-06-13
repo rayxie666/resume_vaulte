@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import type { Asset, AssetUsage } from "./types";
@@ -144,7 +145,9 @@ export default function AttachmentsModal({
     pushLinkChange();
   }
 
-  return (
+  // Portal to <body> so the backdrop escapes the `.content` stacking context
+  // (which sits below the navbar) and correctly covers the whole window.
+  return createPortal(
     <div
       className="modal-backdrop"
       data-closing={closing || undefined}
@@ -207,6 +210,7 @@ export default function AttachmentsModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

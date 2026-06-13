@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { diffLines } from "diff";
 import type { ResumeCheckpoint } from "./types";
 import { deleteCheckpoint, getVersion, listCheckpoints } from "./db";
@@ -77,7 +78,9 @@ export default function HistoryPanel({
     close();
   }
 
-  return (
+  // Portal to <body> so the backdrop escapes the `.content` stacking context
+  // (which sits below the navbar) and correctly covers the whole window.
+  return createPortal(
     <div
       className="modal-backdrop"
       data-closing={closing || undefined}
@@ -142,7 +145,8 @@ export default function HistoryPanel({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

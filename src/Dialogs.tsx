@@ -123,7 +123,7 @@ function PromptModal({
 
   return (
     <div
-      className="modal-backdrop"
+      className="modal-backdrop dialog-backdrop"
       data-closing={closing || undefined}
       onClick={() => finish(null)}
       onKeyDown={(e) => {
@@ -178,7 +178,7 @@ function ConfirmModal({
   }, []);
   return (
     <div
-      className="modal-backdrop"
+      className="modal-backdrop dialog-backdrop"
       data-closing={closing || undefined}
       onClick={() => finish(false)}
     >

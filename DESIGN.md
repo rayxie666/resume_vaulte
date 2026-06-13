@@ -78,6 +78,13 @@ data, not brand chrome.
 `--z-nav 10 < --z-bar 30 < --z-backdrop 40 < --z-modal 50 < --z-toast 60`.
 Never hardcode z-index values.
 
+Any overlay with a `.modal-backdrop` **must render outside `.content`** — at the
+App root or via `createPortal(…, document.body)`. `.content` carries
+`position/z-index` (and view-enter `transform`), which establish a stacking
+context that traps a nested `fixed` backdrop *below* the navbar. Modals sit at
+`--z-backdrop`; prompt/confirm dialogs (`.dialog-backdrop`) sit one step up at
+`--z-modal` so they stay above an open modal.
+
 ## Accessibility
 
 WCAG AA verified per token pair: `--ink` ≥7:1, `--ink-2` ≥4.5:1 on `--bg`;

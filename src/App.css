@@ -2106,6 +2106,12 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: var(--z-backdrop);
+}
+/* Prompt/confirm dialogs are the top-most blocking layer: they must sit above
+   any modal (incl. History/Attachments, which portal to <body> at the same
+   stacking root), e.g. the delete-checkpoint confirm opened from History. */
+.dialog-backdrop {
   z-index: var(--z-modal);
 }
 .modal {
