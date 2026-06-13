@@ -252,7 +252,7 @@ const DICT: Record<Lang, DictShape> = {
     latex_name_placeholder: "e.g. main, en, zh",
     export_tex: "Export .tex",
     tectonic_missing:
-      "tectonic not found. Install with: brew install tectonic",
+      "tectonic not found — install it to enable LaTeX preview.",
     checkpoint: "Checkpoint",
     new_checkpoint: "New checkpoint",
     checkpoint_note: "Note",
@@ -457,7 +457,7 @@ const DICT: Record<Lang, DictShape> = {
     new_latex_title: "新建 LaTeX 版本",
     latex_name_placeholder: "比如 main、中文版",
     export_tex: "导出 .tex",
-    tectonic_missing: "未找到 tectonic。请先执行：brew install tectonic",
+    tectonic_missing: "未找到 tectonic —— 安装后即可启用 LaTeX 预览。",
     checkpoint: "存档点",
     new_checkpoint: "新建存档点",
     checkpoint_note: "备注",

@@ -7,7 +7,7 @@
 Local-first desktop app for managing LaTeX/PDF resume versions —
 live compile, git-style checkpoints, two-way GitHub sync.
 
-[![Platform](https://img.shields.io/badge/platform-macOS-1d1d1f?style=flat)](https://github.com/rayxie666/resume_vaulte)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-1d1d1f?style=flat)](https://github.com/rayxie666/resume_vaulte)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8?style=flat&logo=tauri&logoColor=white)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3da639?style=flat)](#license)
@@ -27,6 +27,7 @@ live compile, git-style checkpoints, two-way GitHub sync.
 - [✨ Features](#-features)
 - [Quick start](#quick-start)
 - [Requirements](#requirements)
+- [Windows](#windows)
 - [GitHub sync](#github-sync)
 - [Attachments (LaTeX images / extra files)](#attachments-latex-images--extra-files)
 - [Where data lives](#where-data-lives)
@@ -167,6 +168,28 @@ GitHub sync just stop working, the rest still does.
 > `tauri dev` fails with a confusing `failed to run 'cargo metadata'` error
 > (see [Troubleshooting](#troubleshooting)).
 
+## Windows
+
+Resume Vault runs on Windows 10/11 (x64). Install these, then the build and
+run commands are identical to macOS (`npm install && npm run tauri dev`):
+
+| Tool | Install |
+| --- | --- |
+| **Node.js ≥ 20** | <https://nodejs.org/> or `winget install OpenJS.NodeJS.LTS` |
+| **Rust (stable ≥ 1.78)** | <https://rustup.rs/> — pick the `x86_64-pc-windows-msvc` host |
+| **MSVC Build Tools** | Visual Studio Installer → "Desktop development with C++" |
+| **WebView2 Runtime** | Built into Windows 11; on Windows 10 run `winget install Microsoft.EdgeWebView2Runtime` |
+| **Git for Windows** _(only for GitHub sync)_ | `winget install Git.Git` |
+| **Tectonic** _(only for LaTeX preview)_ | `winget install --id TectonicProject.Tectonic`, or download from <https://tectonic-typesetting.github.io/> |
+
+The app finds `tectonic`, `git`, and the Claude Code CLI on your `PATH` (with
+the usual winget/scoop/npm install locations as fallbacks), and stores its data
+under `%APPDATA%\com.zheruixie.resumevault\`.
+
+The release installers are **unsigned**, so SmartScreen warns on first launch.
+Click **More info → Run anyway**, or right-click the installer → **Properties**
+→ tick **Unblock**. Code signing is planned but not yet in place.
+
 ## GitHub sync
 
 In the app: **Settings (⚙)** → **GitHub Sync**.
@@ -248,17 +271,19 @@ Delete that folder to nuke the app's state completely.
 npm run tauri build
 ```
 
-Outputs:
+Outputs (per the OS you build on):
 
 ```
 src-tauri/target/release/bundle/
-├── macos/
-│   └── resume-vault.app           # double-clickable .app bundle
-└── dmg/
-    └── resume-vault_0.1.0_aarch64.dmg
+├── macos/  dmg/                    # macOS: resume-vault.app, *_aarch64.dmg
+├── msi/                            # Windows: resume-vault_<version>_x64_en-US.msi
+└── nsis/                           # Windows: resume-vault_<version>_x64-setup.exe
 ```
 
-The binary is unsigned. On first launch macOS Gatekeeper will block it:
+On Windows both installers double-click to install; the app lands in the Start
+menu with the bundled icon. SmartScreen warning → see [Windows](#windows).
+
+The macOS binary is unsigned. On first launch Gatekeeper will block it:
 
 - **Finder** → right-click `resume-vault.app` → **Open** → **Open**
 - Or: `xattr -dr com.apple.quarantine resume-vault.app`
@@ -286,16 +311,18 @@ New terminals get it automatically via your shell profile.
 [Building a release](#building-a-release-app--dmg) above; the binary is
 unsigned.
 
-**`tectonic not found. Install with: brew install tectonic`** (shown in the
-LaTeX preview pane) — the Tectonic engine isn't installed. Fix:
+**`tectonic not found`** (shown in the LaTeX preview pane) — the Tectonic
+engine isn't installed. Fix:
 
 ```bash
-brew install tectonic
+brew install tectonic                                  # macOS
+winget install --id TectonicProject.Tectonic           # Windows
 ```
 
 Then restart the app (a running instance won't pick up the new binary). The
 first compile is slow: Tectonic downloads LaTeX packages on demand and caches
-them under `~/Library/Caches/Tectonic`.
+them (`~/Library/Caches/Tectonic` on macOS,
+`%LOCALAPPDATA%\TectonicProject\Tectonic` on Windows).
 
 **`[plugin:vite:import-analysis] Failed to resolve import "three" from "src/pet/catScene.ts"`**
 — the 3D pet companion depends on `three` (declared in `package.json`) but

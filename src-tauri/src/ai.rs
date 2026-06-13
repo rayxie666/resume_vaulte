@@ -138,16 +138,31 @@ pub async fn ai_complete(
     })
 }
 
-// macOS GUI apps inherit a PATH without Homebrew; probe the usual spots.
-fn find_claude_binary() -> Option<String> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let candidates = [
-        "claude".to_string(),
-        "/opt/homebrew/bin/claude".to_string(),
-        "/usr/local/bin/claude".to_string(),
-        format!("{home}/.local/bin/claude"),
-    ];
-    for c in candidates {
+// Candidate paths to probe, PATH-resolved first. GUI apps inherit a PATH
+// without Homebrew (macOS) / without the npm global dir (Windows), so we add
+// the usual install spots as fallbacks. On Windows the CLI ships as
+// `claude.cmd`, which `which` resolves via PATHEXT.
+fn claude_candidates() -> Vec<std::path::PathBuf> {
+    use std::path::PathBuf;
+    let mut v = Vec::new();
+    if let Some(p) = crate::which::which("claude") {
+        v.push(p);
+    }
+    if cfg!(target_os = "windows") {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            v.push(PathBuf::from(appdata).join("npm").join("claude.cmd"));
+        }
+    } else {
+        let home = std::env::var("HOME").unwrap_or_default();
+        v.push(PathBuf::from("/opt/homebrew/bin/claude"));
+        v.push(PathBuf::from("/usr/local/bin/claude"));
+        v.push(PathBuf::from(&home).join(".local").join("bin").join("claude"));
+    }
+    v
+}
+
+fn find_claude_binary() -> Option<std::path::PathBuf> {
+    for c in claude_candidates() {
         if let Ok(out) = Command::new(&c).arg("--version").output() {
             if out.status.success() {
                 return Some(c);
@@ -189,7 +204,14 @@ static RUNNING_CLI_PID: Mutex<Option<u32>> = Mutex::new(None);
 pub async fn claude_code_cancel() -> Result<(), String> {
     let pid = RUNNING_CLI_PID.lock().unwrap().take();
     if let Some(pid) = pid {
-        let _ = Command::new("kill").arg(pid.to_string()).output();
+        if cfg!(target_os = "windows") {
+            // /T also kills the child tree (the CLI spawns node); /F forces it.
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .output();
+        } else {
+            let _ = Command::new("kill").arg(pid.to_string()).output();
+        }
     }
     Ok(())
 }

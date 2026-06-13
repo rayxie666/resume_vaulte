@@ -212,20 +212,48 @@ fn summarize_errors(main_log: &str) -> Vec<String> {
     hints
 }
 
-const COMMON_PATHS: &[&str] = &[
-    "/opt/homebrew/bin/tectonic",
-    "/usr/local/bin/tectonic",
-    "/usr/bin/tectonic",
-];
-
+/// Locate the `tectonic` binary: `PATH` first, then platform-typical install
+/// locations. macOS keeps its original three fallbacks; Windows adds the
+/// winget/scoop/cargo shim spots (spec 2026-06-12-windows-support §3.3).
 fn find_tectonic() -> Option<PathBuf> {
-    for p in COMMON_PATHS {
-        let path = PathBuf::from(p);
-        if path.exists() {
-            return Some(path);
-        }
+    if cfg!(target_os = "windows") {
+        crate::which::which_or("tectonic", &windows_tectonic_fallbacks())
+    } else {
+        crate::which::which_or("tectonic", &unix_tectonic_fallbacks())
     }
-    None
+}
+
+fn unix_tectonic_fallbacks() -> Vec<PathBuf> {
+    ["/opt/homebrew/bin/tectonic", "/usr/local/bin/tectonic", "/usr/bin/tectonic"]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn windows_tectonic_fallbacks() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        let local = PathBuf::from(local);
+        v.push(local.join("Programs").join("Tectonic").join("tectonic.exe"));
+        v.push(local.join("Microsoft").join("WinGet").join("Links").join("tectonic.exe"));
+    }
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        let profile = PathBuf::from(profile);
+        v.push(profile.join("scoop").join("shims").join("tectonic.exe"));
+        v.push(profile.join(".cargo").join("bin").join("tectonic.exe"));
+    }
+    v
+}
+
+/// The "not found" hint shown in the compile log — carries the right install
+/// command per OS (the frontend surfaces `result.log` directly).
+fn tectonic_missing_hint() -> String {
+    if cfg!(target_os = "windows") {
+        "tectonic not found. Install with: winget install --id TectonicProject.Tectonic"
+            .to_string()
+    } else {
+        "tectonic not found. Install with `brew install tectonic`.".to_string()
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -247,9 +275,9 @@ fn compile_latex_inner(
     source: String,
     assets: Vec<CompileAsset>,
     fonts_src: Option<PathBuf>,
+    log_dir: Option<PathBuf>,
 ) -> Result<CompileResult, String> {
-    let tectonic = find_tectonic()
-        .ok_or_else(|| "tectonic not found. Install with `brew install tectonic`.".to_string())?;
+    let tectonic = find_tectonic().ok_or_else(tectonic_missing_hint)?;
     let dir = std::env::temp_dir().join(unique_dir_name());
     fs::create_dir_all(&dir).map_err(|e| format!("create temp dir failed: {e}"))?;
     let tex = dir.join("main.tex");
@@ -397,17 +425,17 @@ fn compile_latex_inner(
     };
 
     // Persist last compile log to AppData so the user can inspect it.
-    let _ = persist_last_log(&result.log);
+    let _ = persist_last_log(log_dir.as_deref(), &result.log);
 
     let _ = cleanup_dir(&dir);
     Ok(result)
 }
 
-fn persist_last_log(log: &str) -> std::io::Result<()> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let dir = PathBuf::from(home)
-        .join("Library/Application Support/com.zheruixie.resumevault");
-    fs::create_dir_all(&dir)?;
+fn persist_last_log(dir: Option<&Path>, log: &str) -> std::io::Result<()> {
+    let Some(dir) = dir else {
+        return Ok(()); // app data dir unresolvable — drop the log, don't crash
+    };
+    fs::create_dir_all(dir)?;
     fs::write(dir.join("last-compile.log"), log)
 }
 
@@ -421,9 +449,10 @@ pub async fn compile_latex(
     req: CompileRequest,
 ) -> Result<CompileResult, String> {
     let fonts_src = resource_fonts_dir(&app);
+    let log_dir = crate::paths::app_data_dir(&app).ok();
     let CompileRequest { source, assets } = req;
     tauri::async_runtime::spawn_blocking(move || {
-        compile_latex_inner(source, assets, fonts_src)
+        compile_latex_inner(source, assets, fonts_src, log_dir)
     })
     .await
     .map_err(|e| format!("join error: {e}"))?

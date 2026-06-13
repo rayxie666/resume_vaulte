@@ -6,13 +6,12 @@ use std::process::Command;
 
 const REPO_SUBPATH: &str = "github_repo";
 
-fn vault_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home).join("Library/Application Support/com.zheruixie.resumevault")
+fn vault_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    crate::paths::app_data_dir(app)
 }
 
-fn repo_dir() -> PathBuf {
-    vault_dir().join(REPO_SUBPATH)
+fn repo_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(vault_dir(app)?.join(REPO_SUBPATH))
 }
 
 #[derive(serde::Serialize)]
@@ -67,6 +66,10 @@ fn ensure_user_config(cwd: &Path, log: &mut String) -> std::io::Result<()> {
         log,
     );
     let _ = run_git(&["config", "user.name", "Resume Vault"], cwd, log);
+    // Lock line endings to LF (local scope only). Without this, Git for
+    // Windows' default core.autocrlf=true rewrites pushed .tex to CRLF, which
+    // a macOS peer then sees as LF — a spurious full-file diff every sync.
+    let _ = run_git(&["config", "core.autocrlf", "false"], cwd, log);
     Ok(())
 }
 
@@ -79,13 +82,14 @@ fn redact(log: &str, pat: &str) -> String {
 
 #[tauri::command]
 pub async fn git_connect(
+    app: tauri::AppHandle,
     repo_url: String,
     pat: String,
     branch: String,
 ) -> Result<GitResult, String> {
+    let dir = repo_dir(&app)?;
     let pat_clone = pat.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<GitResult, String> {
-        let dir = repo_dir();
         let auth = inject_token(&repo_url, &pat_clone);
         let branch = if branch.trim().is_empty() {
             "main".to_string()
@@ -159,9 +163,9 @@ pub async fn git_connect(
 }
 
 #[tauri::command]
-pub async fn git_disconnect() -> Result<GitResult, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<GitResult, String> {
-        let dir = repo_dir();
+pub async fn git_disconnect(app: tauri::AppHandle) -> Result<GitResult, String> {
+    let dir = repo_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<GitResult, String> {
         let mut log = String::new();
         if dir.exists() {
             fs::remove_dir_all(&dir).map_err(|e| format!("remove failed: {e}"))?;
@@ -187,9 +191,9 @@ pub struct GitStatus {
 }
 
 #[tauri::command]
-pub async fn git_status() -> Result<GitStatus, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<GitStatus, String> {
-        let dir = repo_dir();
+pub async fn git_status(app: tauri::AppHandle) -> Result<GitStatus, String> {
+    let dir = repo_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || -> Result<GitStatus, String> {
         if !dir.exists() {
             return Ok(GitStatus {
                 connected: false,
@@ -255,6 +259,7 @@ fn strip_token(url: &str) -> String {
 
 #[tauri::command]
 pub async fn git_apply(
+    app: tauri::AppHandle,
     files: Vec<FileWrite>,
     deletes: Vec<String>,
     commit_message: String,
@@ -263,9 +268,9 @@ pub async fn git_apply(
     branch: String,
     push: bool,
 ) -> Result<GitResult, String> {
+    let dir = repo_dir(&app)?;
     let pat_clone = pat.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<GitResult, String> {
-        let dir = repo_dir();
         if !dir.exists() {
             return Err("repo not connected".into());
         }
@@ -401,13 +406,14 @@ pub struct GitPullResult {
 
 #[tauri::command]
 pub async fn git_pull(
+    app: tauri::AppHandle,
     repo_url: String,
     pat: String,
     branch: String,
 ) -> Result<GitPullResult, String> {
+    let dir = repo_dir(&app)?;
     let pat_clone = pat.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<GitPullResult, String> {
-        let dir = repo_dir();
         if !dir.exists() {
             return Err("repo not connected".into());
         }
@@ -497,9 +503,12 @@ const MAX_SNAPSHOT_FILE: usize = 30 * 1024 * 1024;
 const MAX_ASSET_FILE: usize = 5 * 1024 * 1024;
 
 #[tauri::command]
-pub async fn git_remote_snapshot(branch: String) -> Result<Vec<RepoFile>, String> {
+pub async fn git_remote_snapshot(
+    app: tauri::AppHandle,
+    branch: String,
+) -> Result<Vec<RepoFile>, String> {
+    let dir = repo_dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<RepoFile>, String> {
-        let dir = repo_dir();
         if !dir.exists() {
             return Err("repo not connected".into());
         }

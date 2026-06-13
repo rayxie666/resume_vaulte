@@ -1,0 +1,50 @@
+name: build
+
+# PRs and branch pushes: build on macOS + Windows to catch platform breakage.
+# Tag pushes (v*): build and upload installers to a draft GitHub Release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm install
+
+      # PRs / branch pushes: compile + bundle, no publish.
+      - name: Build (no publish)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: npm run tauri build
+
+      # Tag pushes: build + upload artifacts to a draft Release.
+      - name: Build + publish
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Resume Vault ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false

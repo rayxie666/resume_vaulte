@@ -1,7 +1,9 @@
 mod ai;
 mod git;
 mod latex;
+mod paths;
 mod resume_cls;
+mod which;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 

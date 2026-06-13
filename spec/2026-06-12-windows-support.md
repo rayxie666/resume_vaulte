@@ -3,7 +3,14 @@
 - 日期:2026-06-12
 - 前置:无(改的是底层路径 / 工具发现,与既有 sync / latex 行为正交)
 - 目标:在 Windows 10/11 (x64) 上,Resume Vault 能正常安装、启动,并完成核心闭环 —— 类目 CRUD、LaTeX 实时编译预览、Checkpoint、GitHub 双向同步、AI 改写。产物形态为 `.msi` 与 `.exe` (NSIS) 安装包。
-- 状态:待实装。
+- 状态:**已实装(2026-06-12)。** 后端 6 处硬编码全部改为 `which` 统一
+  发现 + `app_data_dir()` 路径;新增 `which.rs` / `paths.rs`;`git.rs` 六个
+  命令注入 `AppHandle`,`ensure_user_config` 锁 `core.autocrlf=false`;
+  `tauri.conf.json` 显式 windows bundle 块;README 加 Windows 章节 + 徽章;
+  新增 CI matrix。macOS 侧 `app_data_dir()` 解析为既有的
+  `~/Library/Application Support/com.zheruixie.resumevault`,数据原地复用,
+  `cargo build` + `npm run build` 均通过。Windows 真机验证(§6 / §7 矩阵)
+  待有 Windows 环境时执行。
 
 ---
 
