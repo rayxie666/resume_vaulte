@@ -285,7 +285,11 @@ function buildStage2aPrompt(text: string, detected: DetectedMeta): string {
   const tag =
     `[detected: lang=${detected.lang}, sections=${detected.sections.join("|") || "?"}` +
     `, hasPhoto=${detected.hasPhoto}]`;
-  return `${tag}\n\n--- RESUME TEXT ---\n${text}`;
+  return (
+    `Convert the resume text below into a .tex file. Reply with the LaTeX ` +
+    `source ONLY — no progress messages, no "Done.", no summaries.\n\n` +
+    `${tag}\n\n--- RESUME TEXT (transform this) ---\n${text}`
+  );
 }
 
 /** Strip wrapping code fences, BOM, leading/trailing whitespace, and any
@@ -314,6 +318,7 @@ function postprocessTex(raw: string): string {
  * adds a warning so the user knows the import wasn't a clean match.
  */
 function coerceBuiltinTex(tex: string, warnings: string[]): string {
+  assertResumeLikeOutput(tex);
   let out = tex;
   const docRe = /\\documentclass\b\s*(\[[^\]]*\])?\s*\{([^}]+)\}/;
   const match = docRe.exec(out);
@@ -347,6 +352,7 @@ function validateCustomCls(cls: string): void {
 /** Same forgiveness rules as `coerceBuiltinTex`, but targeted at the
  *  experimental custom-cls path. */
 function coerceCustomTex(tex: string, warnings: string[]): string {
+  assertResumeLikeOutput(tex);
   let out = tex;
   const docRe = /\\documentclass\b\s*(\[[^\]]*\])?\s*\{([^}]+)\}/;
   const match = docRe.exec(out);
@@ -360,6 +366,37 @@ function coerceCustomTex(tex: string, warnings: string[]): string {
     out = out.replace(docRe, "\\documentclass{custom_resume}");
   }
   return wrapInDocument(out, warnings);
+}
+
+/**
+ * Sanity-check that the AI returned a LaTeX resume rather than a chat-style
+ * acknowledgment (seen with Claude Code CLI mode replying "No pending tasks.
+ * The LaTeX conversion is complete." instead of actual source).
+ *
+ * Required: at least two of the macros a resume.cls / custom_resume document
+ * would carry. Anything else means the model misunderstood the prompt and
+ * the right thing is to fail loudly, not paper over it with a wrapper.
+ */
+function assertResumeLikeOutput(tex: string): void {
+  const markers = [
+    /\\name\b/,
+    /\\address\b/,
+    /\\(?:rSection|section)\b/,
+    /\\rSubsection\b/,
+    /\\begin\{rSection\}/,
+    /\\begin\{itemize\}/,
+    /\\item\b/,
+  ];
+  const hits = markers.filter((re) => re.test(tex)).length;
+  if (hits < 2) {
+    throw new AiError(
+      "empty",
+      "The AI did not produce a LaTeX resume — it returned something like a " +
+        'short acknowledgment instead. Click "Retry" to ask again, or check ' +
+        "the AI provider in Settings. (Claude Code CLI mode is known to do " +
+        "this on long inputs; switching to a direct API key usually helps.)",
+    );
+  }
 }
 
 /**
