@@ -155,6 +155,11 @@ type DictShape = {
   ai_test_ok: string;
   ai_test_failed: string;
   ai_privacy_hint: string;
+  ai_key_help_title: string;
+  ai_key_help_steps: (provider: string) => string[];
+  ai_key_help_open: (name: string) => string;
+  ai_key_help_custom: string;
+  ai_key_help_paste_hint: string;
   ai_cli_found: (v: string) => string;
   ai_cli_missing: string;
   ai_button: string;
@@ -369,6 +374,17 @@ const DICT: Record<Lang, DictShape> = {
     ai_test_failed: "Connection failed",
     ai_privacy_hint:
       "When rewriting, the selected text (and the category's job description) is sent to the chosen AI provider. The local Claude Code mode also hands the text to its vendor.",
+    ai_key_help_title: "How do I get an API key?",
+    ai_key_help_steps: (provider: string) => [
+      `Sign in to ${provider} (create an account if you don't have one).`,
+      "Open the API keys page and create a new key.",
+      "Copy the key and paste it into the API Key field above.",
+      "Make sure your account has credit / billing enabled, or requests will fail.",
+    ],
+    ai_key_help_open: (name: string) => `Open ${name} ↗`,
+    ai_key_help_custom:
+      "Custom endpoint: ask your provider or internal gateway admin for the Base URL, API key, and an available model name.",
+    ai_key_help_paste_hint: "Copy the key (it starts with sk-) and paste it above.",
     ai_cli_found: (v: string) => `✓ Claude Code detected: ${v}`,
     ai_cli_missing: "✗ Claude Code not found — install it first",
     ai_button: "Rewrite with AI",
@@ -566,6 +582,17 @@ const DICT: Record<Lang, DictShape> = {
     ai_test_failed: "连接失败",
     ai_privacy_hint:
       "改写时所选文本（及分类的岗位描述）将发送给所选 AI 提供商；Claude Code 本地模式同样会将文本交给其供应商处理。",
+    ai_key_help_title: "如何获取 API Key？",
+    ai_key_help_steps: (provider: string) => [
+      `登录 ${provider}（没有账号先注册一个）。`,
+      "打开 API keys 页面，新建一个 key。",
+      "复制该 key，粘贴到上方的 API Key 输入框。",
+      "确认账户已充值 / 开通计费，否则请求会失败。",
+    ],
+    ai_key_help_open: (name: string) => `打开 ${name} ↗`,
+    ai_key_help_custom:
+      "自定义端点：请向你的服务商或内网网关管理员索取 Base URL、API Key 与可用的 model 名称。",
+    ai_key_help_paste_hint: "复制以 sk- 开头的 key，粘贴到上方。",
     ai_cli_found: (v: string) => `✓ 已检测到 Claude Code：${v}`,
     ai_cli_missing: "✗ 未检测到 Claude Code，请先安装",
     ai_button: "AI 改写",

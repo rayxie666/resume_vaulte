@@ -21,29 +21,46 @@ export interface AiConfig {
 
 export const AI_PRESETS: Record<
   AiPreset,
-  { kind: AiProviderKind; baseUrl: string; model: string; modelPlaceholder?: string }
+  {
+    kind: AiProviderKind;
+    baseUrl: string;
+    model: string;
+    modelPlaceholder?: string;
+    /** Provider's API-keys console page; absent = no "open" button (custom). */
+    keyUrl?: string;
+    /** Site name shown in the "Open …" link button. */
+    keyConsoleName?: string;
+  }
 > = {
   claude: {
     kind: "anthropic",
     baseUrl: "https://api.anthropic.com",
     model: "claude-opus-4-8",
+    keyUrl: "https://console.anthropic.com/settings/keys",
+    keyConsoleName: "Anthropic Console",
   },
   openai: {
     kind: "openai-compatible",
     baseUrl: "https://api.openai.com/v1",
     model: "",
     modelPlaceholder: "gpt-4o",
+    keyUrl: "https://platform.openai.com/api-keys",
+    keyConsoleName: "OpenAI Platform",
   },
   deepseek: {
     kind: "openai-compatible",
     baseUrl: "https://api.deepseek.com",
     model: "deepseek-chat",
+    keyUrl: "https://platform.deepseek.com/api_keys",
+    keyConsoleName: "DeepSeek Platform",
   },
   kimi: {
     kind: "openai-compatible",
     baseUrl: "https://api.moonshot.cn/v1",
     model: "",
     modelPlaceholder: "kimi-… / moonshot-…",
+    keyUrl: "https://platform.moonshot.cn/console/api-keys",
+    keyConsoleName: "Moonshot Platform",
   },
   custom: {
     kind: "openai-compatible",

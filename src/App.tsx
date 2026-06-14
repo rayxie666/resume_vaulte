@@ -1583,6 +1583,42 @@ function AiSection() {
               onChange={(e) => update({ apiKey: e.target.value.trim() })}
             />
           </label>
+          <details className="gh-help-details">
+            <summary>{t("ai_key_help_title")}</summary>
+            <div className="collapse-body">
+              <div className="collapse-inner">
+                {AI_PRESETS[cfg.preset].keyUrl ? (
+                  <>
+                    <ol className="gh-help-steps">
+                      {t("ai_key_help_steps")(
+                        AI_PRESETS[cfg.preset].keyConsoleName ?? "",
+                      ).map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ol>
+                    <div className="gh-help-actions">
+                      <button
+                        type="button"
+                        className="link"
+                        onClick={() =>
+                          openUrl(AI_PRESETS[cfg.preset].keyUrl!).catch(
+                            console.error,
+                          )
+                        }
+                      >
+                        {t("ai_key_help_open")(
+                          AI_PRESETS[cfg.preset].keyConsoleName ?? "",
+                        )}
+                      </button>
+                    </div>
+                    <p className="gh-help-scope">{t("ai_key_help_paste_hint")}</p>
+                  </>
+                ) : (
+                  <p className="gh-help-scope">{t("ai_key_help_custom")}</p>
+                )}
+              </div>
+            </div>
+          </details>
           <label className="field">
             <span>{t("ai_base_url")}</span>
             <input
