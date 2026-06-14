@@ -16,7 +16,7 @@ revision (checkpoints + diffs).
 
 ## Product Purpose
 
-Resume Vault is a local-first Tauri desktop app for managing resume versions
+Resumimi (简历喵喵) is a local-first Tauri desktop app for managing resume versions
 across job categories. Core loop: pick a category → pick a version → edit LaTeX
 with live PDF preview (Tectonic compile, ~800ms debounce) → checkpoint →
 optionally sync to a private GitHub repo. Success = the user trusts it as the

@@ -47,6 +47,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Resume Vault ${{ github.ref_name }}"
+          releaseName: "Resumimi ${{ github.ref_name }}"
           releaseDraft: false
           prerelease: false

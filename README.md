@@ -1,6 +1,6 @@
 <div align="center">
 
-# Resume Vault
+# Resumimi <sub>简历喵喵</sub>
 
 *One vault for every version of you.*
 
@@ -17,20 +17,15 @@ live compile, git-style checkpoints, two-way GitHub sync.
   <source media="(prefers-color-scheme: dark)"
           srcset="docs/screenshots/00-hero.dark.png">
   <img src="docs/screenshots/00-hero.light.png" width="840"
-       alt="Resume Vault — LaTeX editor with live PDF preview">
+       alt="Resumimi — LaTeX editor with live PDF preview">
 </picture>
 
 </div>
 
 ## Download
 
-Latest release: **v0.2.3** — or browse all on the
-[Releases page](https://github.com/rayxie666/resume_vaulte/releases).
-
-| OS | Installer |
-| --- | --- |
-| **macOS** (Apple Silicon) | [resume-vault_0.2.3_aarch64.dmg](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.3/resume-vault_0.2.3_aarch64.dmg) |
-| **Windows** 10/11 (x64) | [resume-vault_0.2.3_x64-setup.exe](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.3/resume-vault_0.2.3_x64-setup.exe) · [.msi](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.3/resume-vault_0.2.3_x64_en-US.msi) |
+Grab the latest **macOS** (`.dmg`) or **Windows** (`.exe` / `.msi`) installer
+from the **[Releases page →](https://github.com/rayxie666/resume_vaulte/releases/latest)**.
 
 The installers are unsigned, so the OS warns on first launch: macOS Gatekeeper
 → right-click the app → **Open**; Windows SmartScreen → **More info → Run
@@ -185,7 +180,7 @@ GitHub sync just stop working, the rest still does.
 
 ## Windows
 
-Resume Vault runs on Windows 10/11 (x64). Install these, then the build and
+Resumimi runs on Windows 10/11 (x64). Install these, then the build and
 run commands are identical to macOS (`npm install && npm run tauri dev`):
 
 | Tool | Install |
@@ -290,9 +285,9 @@ Outputs (per the OS you build on):
 
 ```
 src-tauri/target/release/bundle/
-├── macos/  dmg/                    # macOS: resume-vault.app, *_aarch64.dmg
-├── msi/                            # Windows: resume-vault_<version>_x64_en-US.msi
-└── nsis/                           # Windows: resume-vault_<version>_x64-setup.exe
+├── macos/  dmg/                    # macOS: resumimi.app, *_aarch64.dmg
+├── msi/                            # Windows: resumimi_<version>_x64_en-US.msi
+└── nsis/                           # Windows: resumimi_<version>_x64-setup.exe
 ```
 
 On Windows both installers double-click to install; the app lands in the Start
@@ -300,8 +295,8 @@ menu with the bundled icon. SmartScreen warning → see [Windows](#windows).
 
 The macOS binary is unsigned. On first launch Gatekeeper will block it:
 
-- **Finder** → right-click `resume-vault.app` → **Open** → **Open**
-- Or: `xattr -dr com.apple.quarantine resume-vault.app`
+- **Finder** → right-click `resumimi.app` → **Open** → **Open**
+- Or: `xattr -dr com.apple.quarantine resumimi.app`
 
 To sign + notarize for distribution, set up Apple Developer credentials and
 follow [Tauri's macOS signing guide](https://tauri.app/v2/distribute/sign/macos/).
@@ -358,7 +353,7 @@ For contributors — how the codebase is laid out and why.
 ### Project layout
 
 ```
-resume-vault/
+resumimi/
 ├── src/                        # React frontend (Vite + TS)
 │   ├── App.tsx                 # main UI, navigation, modals
 │   ├── HistoryPanel.tsx        # checkpoint diff/restore

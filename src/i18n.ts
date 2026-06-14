@@ -202,7 +202,7 @@ type DictShape = {
 
 const DICT: Record<Lang, DictShape> = {
   en: {
-    app_title: "Resume Vault",
+    app_title: "Resumimi",
     back: "Back",
     edit: "Edit",
     settings: "Settings",
@@ -324,7 +324,7 @@ const DICT: Record<Lang, DictShape> = {
     github_help_title: "How do I get a token?",
     github_help_steps: () => [
       "Open GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens.",
-      'Click "Generate new token". Give it a name (e.g. "Resume Vault") and an expiration.',
+      'Click "Generate new token". Give it a name (e.g. "Resumimi") and an expiration.',
       'Under Repository access, pick "Only select repositories" and choose the repo above.',
       "Under Repository permissions, set Contents to Read and write. Leave the rest as is.",
       "Generate the token, copy it (starts with `github_pat_...`), and paste it above.",
@@ -427,7 +427,7 @@ const DICT: Record<Lang, DictShape> = {
     nebula_off: "Off",
   },
   zh: {
-    app_title: "简历库",
+    app_title: "简历喵喵",
     back: "返回",
     edit: "编辑",
     settings: "设置",
@@ -537,7 +537,7 @@ const DICT: Record<Lang, DictShape> = {
     github_help_title: "如何获取 Token？",
     github_help_steps: () => [
       "打开 GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens。",
-      '点击 "Generate new token"，填名字（如 "Resume Vault"）和到期时间。',
+      '点击 "Generate new token"，填名字（如 "Resumimi"）和到期时间。',
       '在 Repository access 选 "Only select repositories"，勾选上面填的仓库。',
       "在 Repository permissions 把 Contents 设为 Read and write，其它保持默认。",
       "生成 Token 并复制（以 `github_pat_...` 开头），粘贴到上方的 PAT 输入框。",

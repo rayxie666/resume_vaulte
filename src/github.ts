@@ -361,7 +361,7 @@ export async function syncVaultManual(): Promise<GitResult> {
   files.push({
     path: "README.md",
     text:
-      "# Resume Vault\n\nThis repository is managed by Resume Vault. " +
+      "# Resumimi\n\nThis repository is managed by Resumimi. " +
       "Each `categories/<slug>/` folder is a job category; each `.tex` " +
       "or `.pdf` file is a resume version, with a sibling `.json` for " +
       "metadata. Edits to checkpoint history are tracked as git commits.\n",

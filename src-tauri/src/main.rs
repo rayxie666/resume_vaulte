@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    resume_vault_lib::run()
+    resumimi_lib::run()
 }

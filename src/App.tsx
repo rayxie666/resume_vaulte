@@ -110,7 +110,7 @@ import { useClosing, useModalExit } from "./useClosing";
 // resume.cls is provided automatically by the Rust compile step.
 const LATEX_TEMPLATE = String.raw`%----------------------------------------------------------------------------------------
 %	Medium Length Professional CV
-%	resume.cls is provided by Resume Vault — do not delete \documentclass{resume}
+%	resume.cls is provided by Resumimi — do not delete \documentclass{resume}
 %----------------------------------------------------------------------------------------
 
 \documentclass[11pt]{resume}

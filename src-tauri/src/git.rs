@@ -61,11 +61,11 @@ fn run_git(args: &[&str], cwd: &Path, log: &mut String) -> std::io::Result<bool>
 
 fn ensure_user_config(cwd: &Path, log: &mut String) -> std::io::Result<()> {
     let _ = run_git(
-        &["config", "user.email", "resume-vault@local"],
+        &["config", "user.email", "resumimi@local"],
         cwd,
         log,
     );
-    let _ = run_git(&["config", "user.name", "Resume Vault"], cwd, log);
+    let _ = run_git(&["config", "user.name", "Resumimi"], cwd, log);
     // Lock line endings to LF (local scope only). Without this, Git for
     // Windows' default core.autocrlf=true rewrites pushed .tex to CRLF, which
     // a macOS peer then sees as LF — a spurious full-file diff every sync.

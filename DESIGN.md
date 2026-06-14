@@ -1,4 +1,4 @@
-# Design — Resume Vault
+# Design — Resumimi
 
 Visual system for the "midnight letterpress studio" identity: brass type
 under a desk lamp, ink-black slate; the compiled page glows like paper on a
