@@ -21,6 +21,14 @@ function randomId(): string {
   );
 }
 
+/** Last path segment, splitting on both separators — dialog paths are
+ *  backslash-delimited on Windows, so a `/`-only split would keep the whole
+ *  absolute path and produce an illegal stored filename. */
+function basename(p: string): string {
+  const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+
 export async function importPdfFromDialog(): Promise<{
   storedPath: string;
   originalName: string;
@@ -31,7 +39,7 @@ export async function importPdfFromDialog(): Promise<{
   });
   if (!picked || typeof picked !== "string") return null;
   await ensurePdfDir();
-  const fname = picked.split("/").pop() || "resume.pdf";
+  const fname = basename(picked) || "resume.pdf";
   const stored = `${PDF_DIR}/${randomId()}_${fname}`;
   const bytes = await readFile(picked);
   await writeFile(stored, bytes, { baseDir: BaseDirectory.AppData });

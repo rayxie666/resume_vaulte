@@ -44,6 +44,7 @@ type DictShape = {
   auto: string;
   version_name: string;
   import_pdf_title: string;
+  import_pdf_failed: string;
   delete_category_title: string;
   delete_category_msg: (name: string) => string;
   delete_version_title: string;
@@ -228,6 +229,7 @@ const DICT: Record<Lang, DictShape> = {
     // Version
     version_name: "Version name",
     import_pdf_title: "Import PDF",
+    import_pdf_failed: "Couldn't import that PDF",
     // Confirm
     delete_category_title: "Delete category?",
     delete_category_msg: (name: string) =>
@@ -438,6 +440,7 @@ const DICT: Record<Lang, DictShape> = {
     auto: "自动",
     version_name: "版本名称",
     import_pdf_title: "导入 PDF",
+    import_pdf_failed: "导入 PDF 失败",
     delete_category_title: "删除分类？",
     delete_category_msg: (name: string) =>
       `"${name}" 及其所有版本将被永久删除。`,

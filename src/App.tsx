@@ -374,7 +374,21 @@ export default function App() {
         content: LATEX_TEMPLATE,
       });
     } else {
-      const picked = await importPdfFromDialog();
+      let picked: Awaited<ReturnType<typeof importPdfFromDialog>>;
+      try {
+        picked = await importPdfFromDialog();
+      } catch (e) {
+        // Never fail silently — a thrown import (e.g. a bad write path) used to
+        // look like "nothing happened" after choosing a file.
+        console.error("PDF import failed", e);
+        await dlg.confirm({
+          title: t("import_pdf_failed"),
+          message: String(e instanceof Error ? e.message : e),
+          confirmText: t("ok"),
+          cancelText: t("cancel"),
+        });
+        return;
+      }
       if (!picked) return;
       const name = await dlg.prompt({
         title: t("import_pdf_title"),
