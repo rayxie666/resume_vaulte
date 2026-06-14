@@ -242,8 +242,8 @@ export async function importDocumentToLatex(
   if (templateChoice === "builtin-resume-cls") {
     // ── Stage 2a: produce LaTeX targeting built-in resume.cls ──
     const stage2Prompt = buildStage2aPrompt(aiInput, analysis.detected);
-    const tex = postprocessTex(await aiComplete(STAGE2A_SYSTEM, stage2Prompt));
-    validateBuiltinTex(tex);
+    const raw = postprocessTex(await aiComplete(STAGE2A_SYSTEM, stage2Prompt));
+    const tex = coerceBuiltinTex(raw, warnings);
     return { tex, templateChoice, detected: analysis.detected, warnings };
   }
 
@@ -268,8 +268,8 @@ export async function importDocumentToLatex(
   const texPrompt =
     `${langTag}\n\n--- CLASS FILE (already written, do not repeat) ---\n` +
     `${customCls}\n\n--- RESUME TEXT ---\n${aiInput}`;
-  const texBody = postprocessTex(await aiComplete(STAGE2B_TEX_SYSTEM, texPrompt));
-  validateCustomTex(texBody);
+  const texRaw = postprocessTex(await aiComplete(STAGE2B_TEX_SYSTEM, texPrompt));
+  const texBody = coerceCustomTex(texRaw, warnings);
 
   const tex = embedClsAsFilecontents(customCls, texBody);
   return {
@@ -288,32 +288,51 @@ function buildStage2aPrompt(text: string, detected: DetectedMeta): string {
   return `${tag}\n\n--- RESUME TEXT ---\n${text}`;
 }
 
-/** Strip wrapping code fences, BOM, leading/trailing whitespace. */
+/** Strip wrapping code fences, BOM, leading/trailing whitespace, and any
+ *  prose the model added before/after the LaTeX source. */
 function postprocessTex(raw: string): string {
   let s = raw.replace(/^﻿/, "").trim();
-  const fence = /^```(?:latex|tex)?\s*\n([\s\S]*?)\n?```$/i.exec(s);
+  // Strip code fences with any language tag (or none).
+  const fence = /^```[a-zA-Z]*\s*\n([\s\S]*?)\n?```$/.exec(s);
   if (fence) s = fence[1].trim();
+  // If the model preambled "Here is your LaTeX:" before `\documentclass`,
+  // drop everything up to it.
+  const docIdx = s.indexOf("\\documentclass");
+  if (docIdx > 0) s = s.slice(docIdx).trim();
+  // Trim trailing prose after \end{document}.
+  const endMatch = s.match(/\\end\{document\}/);
+  if (endMatch && endMatch.index !== undefined) {
+    s = s.slice(0, endMatch.index + endMatch[0].length).trim();
+  }
   return s;
 }
 
 /**
- * Cheap sanity check that the output actually targets resume.cls. We don't
- * compile here — that's the preview modal's job — but a structural failure
- * means we wasted a round-trip and should report `empty` to the UI.
+ * Coerce the AI's .tex into something that compiles against the bundled
+ * resume.cls. We forgive — if `\documentclass` exists but targets the wrong
+ * class, rewrite it; if it's missing entirely, prepend one. Each rewrite
+ * adds a warning so the user knows the import wasn't a clean match.
  */
-function validateBuiltinTex(tex: string): void {
-  if (!tex.includes("\\documentclass") || !tex.includes("{resume}")) {
+function coerceBuiltinTex(tex: string, warnings: string[]): string {
+  let out = tex;
+  const docRe = /\\documentclass\b\s*(\[[^\]]*\])?\s*\{([^}]+)\}/;
+  const match = docRe.exec(out);
+  if (!match) {
+    warnings.push("AI omitted \\documentclass; inserted \\documentclass[11pt]{resume}.");
+    out = `\\documentclass[11pt]{resume}\n${out}`;
+  } else if (match[2].trim() !== "resume") {
+    warnings.push(
+      `AI used \\documentclass{${match[2]}}; rewriting to \\documentclass[11pt]{resume}.`,
+    );
+    out = out.replace(docRe, "\\documentclass[11pt]{resume}");
+  }
+  if (!out.includes("\\begin{document}") || !out.includes("\\end{document}")) {
     throw new AiError(
       "empty",
-      "AI output is missing \\documentclass{resume}; cannot use.",
+      "AI output is missing \\begin{document}/\\end{document}; cannot use.",
     );
   }
-  if (!tex.includes("\\begin{document}") || !tex.includes("\\end{document}")) {
-    throw new AiError(
-      "empty",
-      "AI output is missing \\begin{document}/\\end{document}.",
-    );
-  }
+  return out;
 }
 
 function validateCustomCls(cls: string): void {
@@ -331,19 +350,28 @@ function validateCustomCls(cls: string): void {
   }
 }
 
-function validateCustomTex(tex: string): void {
-  if (!tex.includes("\\documentclass{custom_resume}")) {
-    throw new AiError(
-      "empty",
-      "AI .tex output is not targeting custom_resume; cannot use.",
+/** Same forgiveness rules as `coerceBuiltinTex`, but targeted at the
+ *  experimental custom-cls path. */
+function coerceCustomTex(tex: string, warnings: string[]): string {
+  let out = tex;
+  const docRe = /\\documentclass\b\s*(\[[^\]]*\])?\s*\{([^}]+)\}/;
+  const match = docRe.exec(out);
+  if (!match) {
+    warnings.push("AI omitted \\documentclass; inserted \\documentclass{custom_resume}.");
+    out = `\\documentclass{custom_resume}\n${out}`;
+  } else if (match[2].trim() !== "custom_resume") {
+    warnings.push(
+      `AI used \\documentclass{${match[2]}}; rewriting to \\documentclass{custom_resume}.`,
     );
+    out = out.replace(docRe, "\\documentclass{custom_resume}");
   }
-  if (!tex.includes("\\begin{document}") || !tex.includes("\\end{document}")) {
+  if (!out.includes("\\begin{document}") || !out.includes("\\end{document}")) {
     throw new AiError(
       "empty",
       "AI .tex output is missing \\begin{document}/\\end{document}.",
     );
   }
+  return out;
 }
 
 /**
