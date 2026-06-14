@@ -139,7 +139,7 @@ Rewrite the resume text the user provides, following these rules strictly:
 
 Output contract: return ONLY the replacement text itself — no preamble, no explanations, no code fences.`;
 
-const MAX_TOKENS = 2048;
+const DEFAULT_MAX_TOKENS = 2048;
 
 interface RustAiResult {
   success: boolean;
@@ -175,11 +175,19 @@ function postprocess(raw: string): string {
  * but lets the caller pass an arbitrary system prompt — needed for the
  * style-analysis (JSON-out) and template-generation stages.
  */
-export async function aiComplete(system: string, prompt: string): Promise<string> {
-  return complete(system, prompt);
+export async function aiComplete(
+  system: string,
+  prompt: string,
+  opts?: { maxTokens?: number },
+): Promise<string> {
+  return complete(system, prompt, opts?.maxTokens);
 }
 
-async function complete(system: string, prompt: string): Promise<string> {
+async function complete(
+  system: string,
+  prompt: string,
+  maxTokens?: number,
+): Promise<string> {
   const cfg = loadAiConfig();
   if (!isAiConfigured()) throw new AiError("not_configured");
 
@@ -198,7 +206,7 @@ async function complete(system: string, prompt: string): Promise<string> {
       model: cfg.model,
       system,
       prompt,
-      maxTokens: MAX_TOKENS,
+      maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
     });
   }
   if (!r.success) throwForFailure(r, cfg.kind);

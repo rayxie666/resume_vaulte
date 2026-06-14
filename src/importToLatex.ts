@@ -31,6 +31,11 @@ export interface ImportResult {
 // 30 KB cap for the AI input; matches §7 "抽出文本 > 30 KB" rule.
 const AI_INPUT_MAX = 30 * 1024;
 
+// A real resume's LaTeX easily runs 4-6K output tokens once \item bullets
+// and \begin{rSubsection} blocks are factored in. The default 2048 cap
+// truncates mid-document and leaves unclosed environments.
+const STAGE2_MAX_TOKENS = 8192;
+
 // ───── Settings: experimental AI-custom-cls switch ─────
 //
 // Off by default per spec §4.3 — stage 2b is expensive (two AI calls instead
@@ -245,7 +250,9 @@ export async function importDocumentToLatex(
   if (templateChoice === "builtin-resume-cls") {
     // ── Stage 2a: produce LaTeX targeting built-in resume.cls ──
     const stage2Prompt = buildStage2aPrompt(aiInput, analysis.detected);
-    const raw = postprocessTex(await aiComplete(STAGE2A_SYSTEM, stage2Prompt));
+    const raw = postprocessTex(
+      await aiComplete(STAGE2A_SYSTEM, stage2Prompt, { maxTokens: STAGE2_MAX_TOKENS }),
+    );
     const tex = coerceBuiltinTex(raw, warnings);
     return { tex, templateChoice, detected: analysis.detected, warnings };
   }
@@ -265,7 +272,7 @@ export async function importDocumentToLatex(
   const clsPrompt =
     `${claudeCodeGuard()}${langTag}\n\n--- RESUME TEXT ---\n${aiInput}`;
   const customCls = postprocessTex(
-    await aiComplete(STAGE2B_CLS_SYSTEM, clsPrompt),
+    await aiComplete(STAGE2B_CLS_SYSTEM, clsPrompt, { maxTokens: STAGE2_MAX_TOKENS }),
   );
   validateCustomCls(customCls);
 
@@ -273,7 +280,9 @@ export async function importDocumentToLatex(
     `${claudeCodeGuard()}${langTag}\n\n` +
     `--- CLASS FILE (already written, do not repeat) ---\n` +
     `${customCls}\n\n--- RESUME TEXT ---\n${aiInput}`;
-  const texRaw = postprocessTex(await aiComplete(STAGE2B_TEX_SYSTEM, texPrompt));
+  const texRaw = postprocessTex(
+    await aiComplete(STAGE2B_TEX_SYSTEM, texPrompt, { maxTokens: STAGE2_MAX_TOKENS }),
+  );
   const texBody = coerceCustomTex(texRaw, warnings);
 
   const tex = embedClsAsFilecontents(customCls, texBody);
@@ -357,7 +366,9 @@ function coerceBuiltinTex(tex: string, warnings: string[]): string {
     );
     out = out.replace(docRe, "\\documentclass[11pt]{resume}");
   }
-  return wrapInDocument(out, warnings);
+  out = wrapInDocument(out, warnings);
+  out = closeUnbalancedEnvironments(out, warnings);
+  return out;
 }
 
 function validateCustomCls(cls: string): void {
@@ -380,6 +391,7 @@ function validateCustomCls(cls: string): void {
 function coerceCustomTex(tex: string, warnings: string[]): string {
   assertResumeLikeOutput(tex);
   let out = tex;
+  // (closeUnbalancedEnvironments runs at the end of this function — see below.)
   const docRe = /\\documentclass\b\s*(\[[^\]]*\])?\s*\{([^}]+)\}/;
   const match = docRe.exec(out);
   if (!match) {
@@ -391,7 +403,48 @@ function coerceCustomTex(tex: string, warnings: string[]): string {
     );
     out = out.replace(docRe, "\\documentclass{custom_resume}");
   }
-  return wrapInDocument(out, warnings);
+  out = wrapInDocument(out, warnings);
+  out = closeUnbalancedEnvironments(out, warnings);
+  return out;
+}
+
+/**
+ * Defensive: when the AI hits its output token limit, the .tex is
+ * truncated mid-environment (e.g. an open `rSubsection` with no
+ * `\end{rSubsection}`), so adding `\end{document}` blindly causes
+ * "\begin{rSubsection} ended by \end{document}" at compile. Walk the body
+ * with a stack and emit `\end{name}` for anything still open right before
+ * `\end{document}`.
+ */
+function closeUnbalancedEnvironments(tex: string, warnings: string[]): string {
+  const re = /\\(begin|end)\s*\{([a-zA-Z*]+)\}/g;
+  const stack: string[] = [];
+  let endDocIdx = -1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(tex)) !== null) {
+    const kind = m[1];
+    const name = m[2];
+    if (name === "document") {
+      if (kind === "end") endDocIdx = m.index;
+      continue;
+    }
+    if (kind === "begin") {
+      stack.push(name);
+    } else {
+      const i = stack.lastIndexOf(name);
+      if (i >= 0) stack.splice(i, 1);
+    }
+  }
+  if (stack.length === 0) return tex;
+  warnings.push(
+    `AI .tex left ${stack.length} environment(s) unclosed (${stack.join(", ")}); ` +
+      "auto-closed before \\end{document}. The source may have been truncated.",
+  );
+  const closing = stack.slice().reverse().map((n) => `\\end{${n}}`).join("\n") + "\n";
+  if (endDocIdx >= 0) {
+    return tex.slice(0, endDocIdx) + closing + tex.slice(endDocIdx);
+  }
+  return `${tex.replace(/\s+$/, "")}\n${closing}`;
 }
 
 /**

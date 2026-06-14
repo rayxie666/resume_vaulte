@@ -111,7 +111,17 @@ export async function importDocumentToLatex(filePath: string): Promise<{
 
 复用 `ai.ts` 已有的内部 `complete(system, prompt)`(目前是 module-private,
 本 spec 把它**导出**为 `aiComplete` 供本模块复用,不新建第二条 API
-通道)。
+通道)。所有已接入的 provider(Claude / OpenAI / **DeepSeek** / Kimi /
+Claude Code / 自定义)**全部可用**,无需新增分支。
+
+> DeepSeek 用户提示(写进预览模态的副文案 / 或设置页 model 输入框
+> placeholder):**阶段 1**(分类,短输入短输出)用 `deepseek-chat`
+> 够用且便宜;**阶段 2**(产 `.tex`,可能 1k+ 输出 token)若 chat 模型
+> 产物结构松散,可切到 `deepseek-reasoner`。本 spec 不在代码层强制
+> 切换——尊重用户在设置页里填的那个 model 字段;**实装时只需要在
+> AiSection 的 DeepSeek `modelPlaceholder` 里把这两个名字都列出来
+> 即可**(`src/ai.ts` 的 deepseek preset 当前 `model: "deepseek-chat"`,
+> 不加 placeholder,本 spec 触发该补充)。
 
 ### 4.1 阶段 1:风格分析
 
