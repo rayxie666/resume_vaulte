@@ -24,13 +24,13 @@ live compile, git-style checkpoints, two-way GitHub sync.
 
 ## Download
 
-Latest release: **v0.2.1** — or browse all on the
+Latest release: **v0.2.2** — or browse all on the
 [Releases page](https://github.com/rayxie666/resume_vaulte/releases).
 
 | OS | Installer |
 | --- | --- |
-| **macOS** (Apple Silicon) | [resume-vault_0.2.1_aarch64.dmg](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.1/resume-vault_0.2.1_aarch64.dmg) |
-| **Windows** 10/11 (x64) | [resume-vault_0.2.1_x64-setup.exe](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.1/resume-vault_0.2.1_x64-setup.exe) · [.msi](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.1/resume-vault_0.2.1_x64_en-US.msi) |
+| **macOS** (Apple Silicon) | [resume-vault_0.2.2_aarch64.dmg](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.2/resume-vault_0.2.2_aarch64.dmg) |
+| **Windows** 10/11 (x64) | [resume-vault_0.2.2_x64-setup.exe](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.2/resume-vault_0.2.2_x64-setup.exe) · [.msi](https://github.com/rayxie666/resume_vaulte/releases/download/v0.2.2/resume-vault_0.2.2_x64_en-US.msi) |
 
 The installers are unsigned, so the OS warns on first launch: macOS Gatekeeper
 → right-click the app → **Open**; Windows SmartScreen → **More info → Run
