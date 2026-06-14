@@ -220,6 +220,9 @@ type DictShape = {
   import_failed_title: string;
   import_doc_unsupported: string;
   import_ai_required_msg: string;
+  import_settings_section: string;
+  import_allow_custom_cls: string;
+  import_allow_custom_cls_hint: string;
 };
 
 const DICT: Record<Lang, DictShape> = {
@@ -474,6 +477,10 @@ const DICT: Record<Lang, DictShape> = {
       "Word 97-2003 (.doc) is not supported. Save as .docx or PDF and try again.",
     import_ai_required_msg:
       "Importing a resume needs an AI provider. Open Settings to configure one.",
+    import_settings_section: "Resume import",
+    import_allow_custom_cls: "Experimental: AI-generated .cls",
+    import_allow_custom_cls_hint:
+      "When on, the AI may design a custom class to better match the source layout. Doubles the token cost per import and may produce a class that doesn't compile.",
   },
   zh: {
     app_title: "简历喵喵",
@@ -706,6 +713,10 @@ const DICT: Record<Lang, DictShape> = {
       "不支持 Word 97-2003（.doc）。请用 Word 另存为 .docx 或 PDF 后再试。",
     import_ai_required_msg:
       "导入简历需要配置 AI 提供商，请先到设置中完成配置。",
+    import_settings_section: "简历导入",
+    import_allow_custom_cls: "实验性：允许 AI 生成自定义模板",
+    import_allow_custom_cls_hint:
+      "开启后，AI 可能为更贴近原稿版式自行设计一份 .cls。每次导入的 token 消耗翻倍，且生成的模板有可能编译失败。",
   },
 };
 

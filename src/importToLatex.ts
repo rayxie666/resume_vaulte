@@ -31,6 +31,23 @@ export interface ImportResult {
 // 30 KB cap for the AI input; matches §7 "抽出文本 > 30 KB" rule.
 const AI_INPUT_MAX = 30 * 1024;
 
+// ───── Settings: experimental AI-custom-cls switch ─────
+//
+// Off by default per spec §4.3 — stage 2b is expensive (two AI calls instead
+// of one, and the AI must produce a coherent .cls + .tex pair).
+const ALLOW_CUSTOM_CLS_KEY = "rv.import.allowCustomCls";
+
+export function loadAllowCustomCls(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(ALLOW_CUSTOM_CLS_KEY) === "1";
+}
+
+export function setAllowCustomCls(v: boolean): void {
+  if (typeof localStorage === "undefined") return;
+  if (v) localStorage.setItem(ALLOW_CUSTOM_CLS_KEY, "1");
+  else localStorage.removeItem(ALLOW_CUSTOM_CLS_KEY);
+}
+
 // ───── Extraction (Rust side) ─────
 
 export async function extractDocument(
@@ -71,6 +88,58 @@ Reply with ONLY a JSON object — no prose, no fences. Schema:
 "reason" must be <= 60 characters. Prefer "builtin-resume-cls" unless the
 source uses a radically different layout (multi-column, sidebar, logo
 header, color blocks).`;
+
+// ───── Stage 2b prompts (experimental AI-generated .cls) ─────
+
+const STAGE2B_CLS_SYSTEM = `You are a LaTeX class author.
+
+Write a complete \`.cls\` file for a single-column resume layout. The class
+will be used by a separate \`.tex\` (you will be asked to write that next),
+so define a clear macro contract and stick to it.
+
+HARD constraints:
+1. Start with: \`\\ProvidesClass{custom_resume}[2026/06/14 v1 Custom resume class]\`.
+2. Load article: \`\\LoadClass[11pt]{article}\`.
+3. Only use packages from this allow-list (Tectonic can auto-fetch them):
+   geometry, parskip, xcolor, titlesec, enumitem, fontspec, xstring.
+   If the source language is "zh" or "mixed", also load \`fontspec\` and try
+   \`\\setCJKmainfont\` via \`xeCJK\` (the only CJK package on the allow-list:
+   add \`xeCJK\` to the allow-list for this case).
+4. Top margin 0.6in, left/right 0.75in (via geometry).
+5. NO graphics. NO external font files. NO images. NO multi-column.
+6. Define EXACTLY these macros for the .tex side to use — match names verbatim:
+   - \`\\name{TEXT}\` — full name. Display centered, uppercase, bold, large.
+   - \`\\address{LINE}\` — contact line. Multiple calls allowed; join with a centered separator.
+   - \`\\begin{rSection}{TITLE}\` ... \`\\end{rSection}\` — section block. Title in small caps or bold uppercase.
+   - \`\\begin{rSubsection}{title}{date}{role}{location}\` ... \`\\end{rSubsection}\` — entry header.
+     If a field is empty (\`{}\`) skip its slot gracefully.
+   - \`\\item\` (standard) inside rSubsection.
+7. Output ONLY the .cls source. No markdown fences, no commentary.
+
+You may vary the typography (titlesec rules, color accents, font choice via
+fontspec) to match the source resume's visual character.`;
+
+const STAGE2B_TEX_SYSTEM = `You are a LaTeX typesetter.
+
+Convert the resume text below into a \`.tex\` that targets the custom class
+defined above (\`\\documentclass{custom_resume}\`). Use ONLY the macros the
+class exposes:
+  \`\\name{...}\`, \`\\address{...}\` (1 or 2 lines),
+  \`\\begin{rSection}{TITLE}\` ... \`\\end{rSection}\`,
+  \`\\begin{rSubsection}{org}{date}{role}{loc}\` ... \`\\end{rSubsection}\`,
+  \`\\item ...\`.
+
+Rules:
+1. First line must be \`\\documentclass{custom_resume}\`.
+2. Sections become \`rSection\`. Use the EXACT section names found in the
+   source (Chinese in, Chinese out). Common ones: EDUCATION, EXPERIENCE,
+   PROJECTS, SKILLS.
+3. Each job/project = one \`rSubsection\`. Empty fields stay empty (\`{}\`).
+4. Achievements = \`\\item\` lines. Preserve wording.
+5. NO \`\\usepackage{...}\` calls — everything must be provided by the class.
+6. NO graphics, NO images.
+7. Escape LaTeX-special characters: % & _ # $ { } ~ ^.
+8. Output ONLY the .tex source — no markdown fences, no commentary.`;
 
 // ───── Stage 2a prompt (built-in resume.cls) ─────
 
@@ -156,27 +225,57 @@ export async function importDocumentToLatex(
     };
   }
 
-  // §4.3: ai-custom-cls is experimental and disabled by default. If the
-  // model picks it, we force the fallback path and note it in warnings.
+  // §4.3: ai-custom-cls is experimental and disabled by default. The user
+  // must explicitly opt in via Settings (`loadAllowCustomCls`).
   let templateChoice: TemplateChoice = analysis.templateChoice;
-  if (templateChoice === "ai-custom-cls") {
+  const allowCustomCls = loadAllowCustomCls();
+  if (templateChoice === "ai-custom-cls" && !allowCustomCls) {
     warnings.push(
-      "AI suggested a custom .cls (experimental path is disabled). " +
+      "AI suggested a custom .cls but the experimental toggle is off. " +
         "Using the built-in resume.cls instead.",
     );
     templateChoice = "builtin-resume-cls";
   }
 
-  // ── Stage 2a: produce LaTeX targeting built-in resume.cls ──
   phase("generating");
-  const stage2Prompt = buildStage2aPrompt(aiInput, analysis.detected);
-  const tex = postprocessTex(await aiComplete(STAGE2A_SYSTEM, stage2Prompt));
 
-  validateBuiltinTex(tex); // throws AiError("empty") if the output isn't usable
+  if (templateChoice === "builtin-resume-cls") {
+    // ── Stage 2a: produce LaTeX targeting built-in resume.cls ──
+    const stage2Prompt = buildStage2aPrompt(aiInput, analysis.detected);
+    const tex = postprocessTex(await aiComplete(STAGE2A_SYSTEM, stage2Prompt));
+    validateBuiltinTex(tex);
+    return { tex, templateChoice, detected: analysis.detected, warnings };
+  }
 
+  // ── Stage 2b: two AI calls to produce a coherent .cls + .tex pair ──
+  //
+  // Spec §6 wanted the .cls saved as a separate per-version asset, but the
+  // global-asset table dedupes by name (`custom_resume.cls` would collide
+  // between imports). Instead we wrap the .cls in `\begin{filecontents*}`
+  // and inline it into the .tex, so every imported version is one
+  // self-contained file with no asset bookkeeping. Users can still edit the
+  // class header in the editor.
+  const langTag =
+    `[detected: lang=${analysis.detected.lang}, sections=` +
+    `${analysis.detected.sections.join("|") || "?"}` +
+    `, hasPhoto=${analysis.detected.hasPhoto}]`;
+  const clsPrompt = `${langTag}\n\n--- RESUME TEXT ---\n${aiInput}`;
+  const customCls = postprocessTex(
+    await aiComplete(STAGE2B_CLS_SYSTEM, clsPrompt),
+  );
+  validateCustomCls(customCls);
+
+  const texPrompt =
+    `${langTag}\n\n--- CLASS FILE (already written, do not repeat) ---\n` +
+    `${customCls}\n\n--- RESUME TEXT ---\n${aiInput}`;
+  const texBody = postprocessTex(await aiComplete(STAGE2B_TEX_SYSTEM, texPrompt));
+  validateCustomTex(texBody);
+
+  const tex = embedClsAsFilecontents(customCls, texBody);
   return {
     tex,
     templateChoice,
+    customCls,
     detected: analysis.detected,
     warnings,
   };
@@ -215,6 +314,58 @@ function validateBuiltinTex(tex: string): void {
       "AI output is missing \\begin{document}/\\end{document}.",
     );
   }
+}
+
+function validateCustomCls(cls: string): void {
+  if (!cls.includes("\\ProvidesClass{custom_resume}")) {
+    throw new AiError(
+      "empty",
+      "Custom .cls is missing \\ProvidesClass{custom_resume}; cannot use.",
+    );
+  }
+  if (!cls.includes("\\LoadClass")) {
+    throw new AiError(
+      "empty",
+      "Custom .cls does not \\LoadClass on top of article; cannot use.",
+    );
+  }
+}
+
+function validateCustomTex(tex: string): void {
+  if (!tex.includes("\\documentclass{custom_resume}")) {
+    throw new AiError(
+      "empty",
+      "AI .tex output is not targeting custom_resume; cannot use.",
+    );
+  }
+  if (!tex.includes("\\begin{document}") || !tex.includes("\\end{document}")) {
+    throw new AiError(
+      "empty",
+      "AI .tex output is missing \\begin{document}/\\end{document}.",
+    );
+  }
+}
+
+/**
+ * Inline the generated `.cls` into the `.tex` via `filecontents*`. Tectonic
+ * writes the file to its working dir before parsing `\documentclass`, so
+ * there's no need to ship a separate asset.
+ */
+function embedClsAsFilecontents(cls: string, texBody: string): string {
+  const docIdx = texBody.indexOf("\\documentclass{custom_resume}");
+  if (docIdx < 0) {
+    // validator already threw on this; defensive bail.
+    return texBody;
+  }
+  const before = texBody.slice(0, docIdx);
+  const fromDoc = texBody.slice(docIdx);
+  return (
+    `${before}` +
+    `\\begin{filecontents*}[overwrite]{custom_resume.cls}\n` +
+    `${cls.trim()}\n` +
+    `\\end{filecontents*}\n` +
+    `${fromDoc}`
+  );
 }
 
 function parseJson<T>(s: string): T {

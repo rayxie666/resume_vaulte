@@ -39,6 +39,7 @@ import AttachmentsModal from "./AttachmentsModal";
 import AssetsPanel from "./AssetsPanel";
 import CodeEditor from "./CodeEditor";
 import ImportPreviewModal from "./ImportPreviewModal";
+import { loadAllowCustomCls, setAllowCustomCls } from "./importToLatex";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { findReferencedAssets } from "./assetScan";
@@ -1513,6 +1514,8 @@ function SettingsModal({
 
         <AiSection />
 
+        <ImportSection />
+
         <PetSection />
 
         <div className="modal-actions">
@@ -1546,6 +1549,40 @@ function NebulaField() {
         </button>
       </div>
     </label>
+  );
+}
+
+function ImportSection() {
+  const t = useT();
+  const [allow, setAllowState] = useState(() => loadAllowCustomCls());
+  return (
+    <div className="gh-section">
+      <div className="gh-title">{t("import_settings_section")}</div>
+      <label className="field">
+        <span>{t("import_allow_custom_cls")}</span>
+        <div className="segmented">
+          <button
+            className={allow ? "seg-active" : ""}
+            onClick={() => {
+              setAllowCustomCls(true);
+              setAllowState(true);
+            }}
+          >
+            {t("pet_on")}
+          </button>
+          <button
+            className={!allow ? "seg-active" : ""}
+            onClick={() => {
+              setAllowCustomCls(false);
+              setAllowState(false);
+            }}
+          >
+            {t("pet_off")}
+          </button>
+        </div>
+      </label>
+      <p className="pet-note">{t("import_allow_custom_cls_hint")}</p>
+    </div>
   );
 }
 
