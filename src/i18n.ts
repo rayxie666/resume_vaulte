@@ -198,6 +198,28 @@ type DictShape = {
   nebula_bg: string;
   nebula_on: string;
   nebula_off: string;
+  // Resume import (PDF/DOCX → LaTeX)
+  import_resume: string;
+  import_resume_title: string;
+  import_resume_default_name_prefix: string;
+  import_phase_extracting: string;
+  import_phase_analyzing: string;
+  import_phase_generating: string;
+  import_phase_previewing: string;
+  import_phase_error: string;
+  import_template_builtin: string;
+  import_template_custom: string;
+  import_pane_tex: string;
+  import_pane_pdf: string;
+  import_accept: string;
+  import_accept_disabled_hint: string;
+  import_retry: string;
+  import_retry_hint: string;
+  import_retries_exhausted: string;
+  import_privacy_hint: string;
+  import_failed_title: string;
+  import_doc_unsupported: string;
+  import_ai_required_msg: string;
 };
 
 const DICT: Record<Lang, DictShape> = {
@@ -425,6 +447,33 @@ const DICT: Record<Lang, DictShape> = {
     nebula_bg: "Background nebula",
     nebula_on: "On",
     nebula_off: "Off",
+    import_resume: "Import Resume",
+    import_resume_title: "Import resume → LaTeX",
+    import_resume_default_name_prefix: "Imported from ",
+    import_phase_extracting: "Extracting text…",
+    import_phase_analyzing: "Analyzing layout…",
+    import_phase_generating: "Generating LaTeX…",
+    import_phase_previewing: "Preview",
+    import_phase_error: "Failed",
+    import_template_builtin: "Built-in resume.cls",
+    import_template_custom: "AI-generated .cls",
+    import_pane_tex: "LaTeX source",
+    import_pane_pdf: "Compiled PDF",
+    import_accept: "Use this version",
+    import_accept_disabled_hint:
+      "The PDF must compile successfully before you can adopt it.",
+    import_retry: "Retry",
+    import_retry_hint:
+      "Generate a different LaTeX version (results vary between runs).",
+    import_retries_exhausted:
+      "Three retries used. Cancel and inspect the source if the result still looks wrong.",
+    import_privacy_hint:
+      "Document text is sent to your configured AI provider. Not stored outside this app.",
+    import_failed_title: "Couldn't import that file",
+    import_doc_unsupported:
+      "Word 97-2003 (.doc) is not supported. Save as .docx or PDF and try again.",
+    import_ai_required_msg:
+      "Importing a resume needs an AI provider. Open Settings to configure one.",
   },
   zh: {
     app_title: "简历喵喵",
@@ -632,6 +681,31 @@ const DICT: Record<Lang, DictShape> = {
     nebula_bg: "背景星云",
     nebula_on: "开",
     nebula_off: "关",
+    import_resume: "导入简历",
+    import_resume_title: "导入简历 → LaTeX",
+    import_resume_default_name_prefix: "导入自 ",
+    import_phase_extracting: "正在抽取文本…",
+    import_phase_analyzing: "正在分析版式…",
+    import_phase_generating: "正在生成 LaTeX…",
+    import_phase_previewing: "预览",
+    import_phase_error: "失败",
+    import_template_builtin: "内置 resume.cls",
+    import_template_custom: "AI 生成的 cls",
+    import_pane_tex: "LaTeX 源码",
+    import_pane_pdf: "编译预览",
+    import_accept: "采用此版本",
+    import_accept_disabled_hint: "右侧 PDF 编译成功后才能采用。",
+    import_retry: "重试",
+    import_retry_hint: "再生成一份 LaTeX（不同次结果会有差异）。",
+    import_retries_exhausted:
+      "已重试 3 次。如仍不理想，建议取消后人工检查原文件。",
+    import_privacy_hint:
+      "文档内容会发送给已配置的 AI 提供商；不会持久化在本项目之外。",
+    import_failed_title: "无法导入该文件",
+    import_doc_unsupported:
+      "不支持 Word 97-2003（.doc）。请用 Word 另存为 .docx 或 PDF 后再试。",
+    import_ai_required_msg:
+      "导入简历需要配置 AI 提供商，请先到设置中完成配置。",
   },
 };
 

@@ -169,6 +169,16 @@ function postprocess(raw: string): string {
   return s;
 }
 
+/**
+ * Public entry point shared with the resume-import pipeline
+ * (`src/importToLatex.ts`). Same persona/error semantics as `aiRewrite`,
+ * but lets the caller pass an arbitrary system prompt — needed for the
+ * style-analysis (JSON-out) and template-generation stages.
+ */
+export async function aiComplete(system: string, prompt: string): Promise<string> {
+  return complete(system, prompt);
+}
+
 async function complete(system: string, prompt: string): Promise<string> {
   const cfg = loadAiConfig();
   if (!isAiConfigured()) throw new AiError("not_configured");

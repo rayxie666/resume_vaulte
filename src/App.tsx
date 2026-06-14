@@ -38,6 +38,8 @@ import HistoryPanel from "./HistoryPanel";
 import AttachmentsModal from "./AttachmentsModal";
 import AssetsPanel from "./AssetsPanel";
 import CodeEditor from "./CodeEditor";
+import ImportPreviewModal from "./ImportPreviewModal";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { findReferencedAssets } from "./assetScan";
 import { useThumbnail, thumbSignature } from "./useThumbnail";
@@ -194,6 +196,9 @@ export default function App() {
   const [editingCategory, setEditingCategory] = useState<JobCategory | null>(null);
   const [editingVersion, setEditingVersion] = useState<ResumeVersion | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [importing, setImporting] = useState<
+    { categoryId: number; filePath: string; originalName: string } | null
+  >(null);
   const [selectMode, setSelectMode] = useState<SelectMode>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const dlg = useDialogs();
@@ -351,6 +356,74 @@ export default function App() {
         const r = await pushDeleteCategory(c);
         if (!r.success) throwGitError(r);
       });
+    }
+  }
+
+  async function handleImportLatex() {
+    if (view.kind !== "category" && view.kind !== "version") return;
+    const catId = view.categoryId;
+    if (!isAiConfigured()) {
+      const open = await dlg.confirm({
+        title: t("ai_not_configured"),
+        message: t("import_ai_required_msg"),
+        confirmText: t("ai_open_settings"),
+        cancelText: t("cancel"),
+      });
+      if (open) setShowSettings(true);
+      return;
+    }
+    const picked = await openFileDialog({
+      multiple: false,
+      filters: [{ name: "Resume", extensions: ["pdf", "docx"] }],
+    });
+    if (!picked || typeof picked !== "string") return;
+    const fname = picked.split(/[\\/]/).pop() || "resume";
+    const lower = fname.toLowerCase();
+    if (lower.endsWith(".doc") && !lower.endsWith(".docx")) {
+      await dlg.confirm({
+        title: t("import_failed_title"),
+        message: t("import_doc_unsupported"),
+        confirmText: t("ok"),
+        cancelText: t("cancel"),
+      });
+      return;
+    }
+    if (!lower.endsWith(".pdf") && !lower.endsWith(".docx")) {
+      await dlg.confirm({
+        title: t("import_failed_title"),
+        message: t("import_doc_unsupported"),
+        confirmText: t("ok"),
+        cancelText: t("cancel"),
+      });
+      return;
+    }
+    setImporting({ categoryId: catId, filePath: picked, originalName: fname });
+  }
+
+  async function finalizeImport(tex: string, suggestedName: string) {
+    if (!importing) return;
+    const catId = importing.categoryId;
+    const createdId = await createVersion({
+      category_id: catId,
+      name: suggestedName,
+      kind: "latex",
+      content: tex,
+    });
+    setImporting(null);
+    await refreshVersions(catId);
+    await refreshHome();
+    setView({ kind: "version", categoryId: catId, versionId: createdId });
+    if (isGitConnected()) {
+      const [cat, ver] = await Promise.all([
+        getCategory(catId),
+        getVersion(createdId),
+      ]);
+      if (cat && ver) {
+        void sync.run(`${ver.name}`, async () => {
+          const r = await pushNewVersion(cat, ver);
+          if (!r.success) throwGitError(r);
+        });
+      }
     }
   }
 
@@ -581,6 +654,7 @@ export default function App() {
               setView({ kind: "version", categoryId: v.category_id, versionId: v.id })
             }
             onAddVersion={handleAddVersion}
+            onImportLatex={handleImportLatex}
             onEditVersion={(v) => setEditingVersion(v)}
             onDeleteVersion={handleDeleteVersion}
             selecting={selectMode === "versions"}
@@ -629,6 +703,17 @@ export default function App() {
         <SettingsModal
           onClose={() => setShowSettings(false)}
           onVaultChanged={handleVaultChanged}
+        />
+      )}
+
+      {importing && (
+        <ImportPreviewModal
+          filePath={importing.filePath}
+          originalName={importing.originalName}
+          onAccept={({ tex, suggestedName }) => {
+            void finalizeImport(tex, suggestedName);
+          }}
+          onClose={() => setImporting(null)}
         />
       )}
 
@@ -986,6 +1071,7 @@ function CategoryView({
   versions,
   onOpenVersion,
   onAddVersion,
+  onImportLatex,
   onEditVersion,
   onDeleteVersion,
   selecting,
@@ -996,6 +1082,7 @@ function CategoryView({
   versions: ResumeVersion[];
   onOpenVersion: (v: ResumeVersion) => void;
   onAddVersion: (k: ResumeKind) => void;
+  onImportLatex: () => void;
   onEditVersion: (v: ResumeVersion) => void;
   onDeleteVersion: (v: ResumeVersion) => void;
   selecting: boolean;
@@ -1037,10 +1124,16 @@ function CategoryView({
               enterIndex={versions.length}
             />
             <AddCard
+              label={t("import_resume")}
+              onClick={onImportLatex}
+              tall
+              enterIndex={versions.length + 1}
+            />
+            <AddCard
               label={t("import_pdf")}
               onClick={() => onAddVersion("pdf")}
               tall
-              enterIndex={versions.length + 1}
+              enterIndex={versions.length + 2}
             />
           </>
         )}
@@ -1838,7 +1931,21 @@ function GitHubSection({
         />
       </label>
       <label className="field">
-        <span>{t("github_pat")}</span>
+        <span className="field-row">
+          {t("github_pat")}
+          <button
+            type="button"
+            className="field-action"
+            onClick={(e) => {
+              e.preventDefault();
+              openUrl(
+                "https://github.com/settings/personal-access-tokens/new",
+              ).catch(console.error);
+            }}
+          >
+            {t("github_open_token_page")} ↗
+          </button>
+        </span>
         <input
           type="password"
           value={cfg.pat}

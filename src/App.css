@@ -2141,6 +2141,174 @@ button {
   padding: 22px;
 }
 
+/* ── Resume-import preview modal ── */
+.modal.import-preview {
+  width: 95vw;
+  max-width: 1280px;
+  height: 90vh;
+  padding: 18px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.import-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 10px;
+}
+.import-preview-titles h3 {
+  margin: 0 0 4px;
+}
+.import-preview-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.import-preview-file {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+.import-preview-sep { opacity: 0.6; }
+.import-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-text);
+  background: var(--brand-soft);
+}
+.import-preview-progress {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--ink-2);
+}
+.import-preview-progress-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.import-preview-progress-hint {
+  font-size: 12px;
+  color: var(--ink-2);
+  max-width: 420px;
+  text-align: center;
+}
+.spinner-ring {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--brand-edge);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.import-preview-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.import-preview-error-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.import-preview-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+.import-preview-tex,
+.import-preview-pdf {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.import-preview-pane-head {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.import-preview-compiling {
+  margin-left: auto;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.import-preview-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.import-preview-pane-body > * {
+  flex: 1;
+}
+.import-preview-pane-body .cm-wrap {
+  height: 100%;
+}
+.import-preview-pane-body .pdf-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.import-preview-pane-body .placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: oklch(0.7 0.01 80);
+}
+.import-preview-pane-body .error-log {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  resize: none;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg);
+  color: var(--ink);
+  padding: 10px;
+}
+.import-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.import-preview-privacy {
+  font-size: 11px;
+  color: var(--ink-2);
+  max-width: 60%;
+  line-height: 1.4;
+}
+
 .modal h3 {
   margin: 0 0 16px;
   font-family: var(--font-serif);
@@ -2192,6 +2360,25 @@ button {
   font-weight: 600;
   color: var(--ink-2);
   margin-bottom: 6px;
+}
+.field > span.field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.field-action {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--brand-text);
+  cursor: pointer;
+}
+.field-action:hover {
+  text-decoration: underline;
 }
 .field input,
 .field textarea {
