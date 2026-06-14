@@ -2,7 +2,7 @@
 // See spec/2026-06-13-import-to-latex.md §4.
 
 import { invoke } from "@tauri-apps/api/core";
-import { AiError, aiComplete } from "./ai";
+import { AiError, aiComplete, loadAiConfig } from "./ai";
 
 export interface ExtractedDoc {
   plain_text: string;
@@ -209,7 +209,10 @@ export async function importDocumentToLatex(
 
   // ── Stage 1: classify layout ──
   phase("analyzing");
-  const stage1Raw = await aiComplete(STAGE1_SYSTEM, aiInput);
+  const stage1Raw = await aiComplete(
+    STAGE1_SYSTEM,
+    `${claudeCodeGuard()}${aiInput}`,
+  );
   let analysis: { templateChoice: TemplateChoice; reason: string; detected: DetectedMeta };
   try {
     analysis = parseJson(stage1Raw);
@@ -259,14 +262,16 @@ export async function importDocumentToLatex(
     `[detected: lang=${analysis.detected.lang}, sections=` +
     `${analysis.detected.sections.join("|") || "?"}` +
     `, hasPhoto=${analysis.detected.hasPhoto}]`;
-  const clsPrompt = `${langTag}\n\n--- RESUME TEXT ---\n${aiInput}`;
+  const clsPrompt =
+    `${claudeCodeGuard()}${langTag}\n\n--- RESUME TEXT ---\n${aiInput}`;
   const customCls = postprocessTex(
     await aiComplete(STAGE2B_CLS_SYSTEM, clsPrompt),
   );
   validateCustomCls(customCls);
 
   const texPrompt =
-    `${langTag}\n\n--- CLASS FILE (already written, do not repeat) ---\n` +
+    `${claudeCodeGuard()}${langTag}\n\n` +
+    `--- CLASS FILE (already written, do not repeat) ---\n` +
     `${customCls}\n\n--- RESUME TEXT ---\n${aiInput}`;
   const texRaw = postprocessTex(await aiComplete(STAGE2B_TEX_SYSTEM, texPrompt));
   const texBody = coerceCustomTex(texRaw, warnings);
@@ -286,9 +291,30 @@ function buildStage2aPrompt(text: string, detected: DetectedMeta): string {
     `[detected: lang=${detected.lang}, sections=${detected.sections.join("|") || "?"}` +
     `, hasPhoto=${detected.hasPhoto}]`;
   return (
-    `Convert the resume text below into a .tex file. Reply with the LaTeX ` +
-    `source ONLY — no progress messages, no "Done.", no summaries.\n\n` +
+    `${claudeCodeGuard()}Convert the resume text below into a .tex file. ` +
+    `Reply with the LaTeX source ONLY — no progress messages, no "Done.", ` +
+    `no summaries. Begin the reply with \`\\documentclass\` and end with ` +
+    `\`\\end{document}\`.\n\n` +
     `${tag}\n\n--- RESUME TEXT (transform this) ---\n${text}`
+  );
+}
+
+/**
+ * Extra directive shoved at the top of the user-side prompt when the active
+ * provider is Claude Code CLI. Without it the CLI tends to treat the input
+ * as a "task" and reply with "No pending tasks. The LaTeX conversion is
+ * complete." instead of producing the .tex itself.
+ */
+function claudeCodeGuard(): string {
+  const cfg = loadAiConfig();
+  if (cfg.kind !== "claude-code") return "";
+  return (
+    `IMPORTANT — read carefully. This is NOT a coding task, NOT a TODO ` +
+    `list, and NOT a request to use tools. Treat the resume content below ` +
+    `as a literal document that you must transform into LaTeX source. Do ` +
+    `NOT acknowledge. Do NOT summarize. Do NOT write things like "Done." ` +
+    `or "No pending tasks." Your entire response must be the .tex source ` +
+    `itself and nothing else.\n\n`
   );
 }
 
