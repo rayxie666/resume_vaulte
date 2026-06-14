@@ -326,13 +326,7 @@ function coerceBuiltinTex(tex: string, warnings: string[]): string {
     );
     out = out.replace(docRe, "\\documentclass[11pt]{resume}");
   }
-  if (!out.includes("\\begin{document}") || !out.includes("\\end{document}")) {
-    throw new AiError(
-      "empty",
-      "AI output is missing \\begin{document}/\\end{document}; cannot use.",
-    );
-  }
-  return out;
+  return wrapInDocument(out, warnings);
 }
 
 function validateCustomCls(cls: string): void {
@@ -365,11 +359,63 @@ function coerceCustomTex(tex: string, warnings: string[]): string {
     );
     out = out.replace(docRe, "\\documentclass{custom_resume}");
   }
-  if (!out.includes("\\begin{document}") || !out.includes("\\end{document}")) {
-    throw new AiError(
-      "empty",
-      "AI .tex output is missing \\begin{document}/\\end{document}.",
-    );
+  return wrapInDocument(out, warnings);
+}
+
+/**
+ * Ensure `\begin{document} ... \end{document}` surrounds the body. The AI
+ * sometimes returns only the documentclass + preamble + content macros
+ * without the document environment, which Tectonic rejects. Insert the
+ * boundaries by scanning for the end of the preamble (last `\usepackage`,
+ * else the `\documentclass` line itself).
+ */
+function wrapInDocument(tex: string, warnings: string[]): string {
+  const hasBegin = tex.includes("\\begin{document}");
+  const hasEnd = tex.includes("\\end{document}");
+  if (hasBegin && hasEnd) return tex;
+
+  let out = tex;
+  if (!hasBegin) {
+    // Find the last `\usepackage{...}` line; otherwise, the `\documentclass` line.
+    const lines = out.split("\n");
+    let insertAfter = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (
+        lines[i].trim().startsWith("\\usepackage") ||
+        lines[i].trim().startsWith("\\RequirePackage") ||
+        lines[i].trim().startsWith("\\documentclass")
+      ) {
+        insertAfter = i;
+      }
+      // Stop at the first body-content line so we don't push \begin{document}
+      // past `\name{...}` / `\address{...}` / `\begin{rSection}...`.
+      const trimmed = lines[i].trim();
+      if (
+        insertAfter >= 0 &&
+        trimmed &&
+        !trimmed.startsWith("%") &&
+        !trimmed.startsWith("\\usepackage") &&
+        !trimmed.startsWith("\\RequirePackage") &&
+        !trimmed.startsWith("\\documentclass") &&
+        !trimmed.startsWith("\\PassOptionsToPackage") &&
+        i > insertAfter
+      ) {
+        break;
+      }
+    }
+    if (insertAfter < 0) {
+      // No preamble found at all — wrap everything.
+      warnings.push("AI omitted \\begin{document}; wrapped the entire output.");
+      out = `\\begin{document}\n${out}`;
+    } else {
+      warnings.push("AI omitted \\begin{document}; inserted it after the preamble.");
+      lines.splice(insertAfter + 1, 0, "\\begin{document}");
+      out = lines.join("\n");
+    }
+  }
+  if (!out.includes("\\end{document}")) {
+    warnings.push("AI omitted \\end{document}; appended it.");
+    out = `${out.replace(/\s+$/, "")}\n\\end{document}\n`;
   }
   return out;
 }
